@@ -31,9 +31,9 @@ def get(url):
 
 def inspect(text):
     # Public URLs and nearby download API implementation, not arbitrary script execution.
-    matches = list(re.finditer(r'\.apk|/api/[^"\s]{0,100}(?:download|version)|download_link|download_url|downloadUrl|android_url', text, re.I))
+    matches = list(re.finditer(r'\.apk|/api/[^"\s]{0,100}(?:download|version)|package_info|download_link|download_url|downloadUrl|android_url', text, re.I))
     for hit in matches[:30]:
-        print('MATCH', text[max(0,hit.start()-180):hit.end()+300].replace('\n',' '), flush=True)
+        print('MATCH', text[max(0,hit.start()-1100):hit.end()+600].replace('\n',' '), flush=True)
 
 page = get(ROOT)
 parser = Page()
