@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries><package android:name="dev.feishuwake.testtarget" /></queries>
+    <application>
+        <receiver android:name=".DebugControlReceiver" android:exported="true" />
+    </application>
+</manifest>
