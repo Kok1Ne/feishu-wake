@@ -228,9 +228,11 @@ def notification_switch(enabled):
 def setup_case(name, route):
     global CASE_START
     control('stop')
-    adb('shell', 'input', 'keyevent', '224')
-    adb('shell', 'wm', 'dismiss-keyguard', check=False)  # Preparation only; before alarm registration.
-    adb('shell', 'input', 'keyevent', '3')
+    if name!='secure_lock':
+        prepare_unlocked()  # Settle asynchronous wake/dismiss before registering the trial.
+    else:
+        adb('shell','input','keyevent','224')
+        adb('shell','input','keyevent','3')
     adb('logcat', '-b', 'all', '-c')
     CASE_START = datetime.datetime.fromtimestamp(float(adb('shell','date','+%s').strip()), datetime.timezone.utc)
     control('test_' + route)
@@ -498,10 +500,14 @@ def ui_tap(resource=None,text=None,scroll=False):
                     adb('shell','input','tap',str((b[0]+b[2])//2),str((b[1]+b[3])//2))
                     return
         if scroll:
-            size=adb('shell','wm','size')
-            match=re.findall(r'(\d+)x(\d+)',size)[-1]
-            width,height=map(int,match)
-            adb('shell','input','swipe',str(width//2),str(height*3//4),str(width//2),str(height//3),'250')
+            area=next((n for n in root.iter('node') if n.get('resource-id')==PACKAGE+':id/main_scroll'),None)
+            if area is None: raise RuntimeError('Scrollable content is not visible')
+            x1,y1,x2,y2=map(int,re.findall(r'\d+',area.get('bounds','')))
+            height=y2-y1
+            start=y1+height*3//4
+            # A slow, overlapping scroll avoids flinging past the target control.
+            adb('shell','input','swipe',str((x1+x2)//2),str(start),
+                str((x1+x2)//2),str(start-min(250,height//4)),'800')
     raise RuntimeError('UI control missing: '+str(resource or text))
 
 def capture_ui(name):

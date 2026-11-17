@@ -46,7 +46,7 @@ def ui_node(text,scroll=False):
             b=list(map(int,re.findall(r'\d+',node.get('bounds',''))))
             if len(b)==4 and b[2]>b[0] and b[3]>b[1]:
                 return node,b
-        if scroll: adb('shell','input','swipe','540','1500','540','600','300')
+        if scroll: adb('shell','input','swipe','540','1450','540','1200','800')
     raise RuntimeError('Release UI control not found: '+text)
 def tap(text,scroll=False):
     node,(x1,y1,x2,y2)=ui_node(text,scroll)
@@ -77,7 +77,7 @@ def tap_resource(resource):
                 if len(b)==4 and b[2]>b[0] and b[3]>b[1]:
                     adb('shell','input','tap',str((b[0]+b[2])//2),str((b[1]+b[3])//2))
                     return
-        adb('shell','input','swipe','540','1500','540','600','300')
+        adb('shell','input','swipe','540','1450','540','1200','800')
     raise RuntimeError('Release UI resource not found: '+resource)
 def capture(name):
     adb('shell','uiautomator','dump','/sdcard/release-ui.xml')
