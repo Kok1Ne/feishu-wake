@@ -22,6 +22,6 @@
 
 ## 验证边界
 
-真实飞书前台由云端 ADB 独立观察，但没有登录账号或验证考勤。强制 Doze 不是自然长时间待机。realme 厂商冻结、自启动和锁屏策略仍待指定真机首次安装验收；详见 [待真机验证事项](reports/REALME_COMPATIBILITY.md)。
+真实飞书前台由云端 ADB 独立观察，但没有登录账号或验证考勤。强制 Doze 不是自然长时间待机。自启动和锁屏策略仍待指定真机首次安装验收；详见 [待真机验证事项](reports/REALME_COMPATIBILITY.md)。
 
 源代码为 Android Studio 工程，依赖 Gradle 8.9、JDK 17、compileSdk 35；API 30 是当前验证范围。研究项目及许可证核查见 [REFERENCES.md](REFERENCES.md)，没有复制无许可证项目代码。
