@@ -6,8 +6,10 @@ on:
     paths:
       - '.github/workflows/feishu-source.yml'
       - 'research/feishu_download_probe.py'
+      - 'research/evidence_audit.py'
 permissions:
   contents: read
+  actions: read
 jobs:
   public-download-page:
     runs-on: ubuntu-24.04
@@ -16,5 +18,9 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
+      - name: Summarize prior emulator evidence in the cloud
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 research/evidence_audit.py
       - name: Read official public download page and its linked scripts
         run: python3 research/feishu_download_probe.py

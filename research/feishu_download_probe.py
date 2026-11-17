@@ -36,7 +36,7 @@ if host == 'zlink.toutiao.com':
             raise SystemExit('Official shortlink returned an HTML landing page; inspect its APK link before downloading.')
         url = response.url
         host = urlparse(url).hostname or ''
-if urlparse(url).scheme != 'https' or not any(host == s or host.endswith('.'+s) for s in ('feishu.cn','feishucdn.com','pstatp.com')):
+if urlparse(url).scheme != 'https' or not any(host == s or host.endswith('.'+s) for s in ('feishu.cn','feishucdn.com','pstatp.com','ugapk.cn')):
     raise SystemExit('No supported official HTTPS package URL; host=' + host)
 print('PACKAGE_HOST', host, flush=True)
 destination = Path(os.environ['RUNNER_TEMP']) / 'official-feishu.apk'
@@ -44,7 +44,7 @@ digest = hashlib.sha256()
 size = 0
 with urlopen(Request(url, headers=HEADERS), timeout=60) as response, destination.open('wb') as output:
     final_host = urlparse(response.url).hostname or ''
-    if not any(final_host == s or final_host.endswith('.'+s) for s in ('feishu.cn','feishucdn.com','pstatp.com')):
+    if not any(final_host == s or final_host.endswith('.'+s) for s in ('feishu.cn','feishucdn.com','pstatp.com','ugapk.cn')):
         raise SystemExit('Unexpected package redirect host: ' + final_host)
     while True:
         block = response.read(1024*1024)
