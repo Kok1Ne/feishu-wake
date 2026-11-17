@@ -1,0 +1,30 @@
+name: Initialize fixed signing key (no APK)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fixed-signing-key
+  cancel-in-progress: false
+jobs:
+  init:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Generate once and encrypt on the cloud runner
+        env:
+          FEISHU_SIGNING_PASSWORD: ${{ secrets.FEISHU_SIGNING_PASSWORD }}
+        run: node signing/vault.mjs init
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: encrypted-signing-recovery
+          path: reports/signing-init/
+          retention-days: 14
+          if-no-files-found: error
