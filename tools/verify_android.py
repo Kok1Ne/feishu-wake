@@ -242,7 +242,20 @@ def setup_case(name, route):
     record(name + '.initial_target_not_foreground', not foreground(before['activity activities']))
 
 def expect_failure(name, stage):
-    time.sleep(22)
+    # Some failures occur immediately after delivery, but the FSI watchdog needs
+    # 20 additional seconds. Wait for the actual terminal event, not a fixed sleep.
+    until=time.monotonic()+65
+    terminal=False
+    while time.monotonic()<until and not terminal:
+        raw=adb('logcat','-d','-v','brief','-s','FeishuWake:I')
+        for line in raw.splitlines():
+            if 'FeishuWake' not in line or '{' not in line: continue
+            try:
+                row=json.loads(line[line.index('{'):])
+                fresh=CASE_START is None or datetime.datetime.fromisoformat(row['at'].replace('Z','+00:00'))>=CASE_START
+                if fresh and row.get('stage')==stage and row.get('status')=='FAIL': terminal=True
+            except (ValueError,KeyError): pass
+        if not terminal: time.sleep(1)
     after = snapshot(name + '-after')
     rows = events(name)
     triggered = {r['run'] for r in rows if r.get('stage') == 'trigger' and r.get('status') == 'OK'}
