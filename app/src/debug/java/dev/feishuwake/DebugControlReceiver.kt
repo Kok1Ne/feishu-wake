@@ -9,6 +9,9 @@ class DebugControlReceiver: BroadcastReceiver() {
     override fun onReceive(context: Context,intent: Intent) {
         val store=Store(context)
         when(intent.getStringExtra("op")) {
+            "fsi_off" -> store.put("suppressFsi","on")
+            "fsi_on" -> store.put("suppressFsi","")
+            "compat_off" -> store.put("compatWake","")
             "mock" -> store.put("test_target","mock")
             "feishu" -> store.put("test_target","")
             "test_b" -> AlarmScheduler.testLater(context)

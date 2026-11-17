@@ -14,7 +14,7 @@ if __name__=='__main__':
     path=ROOT/'release-evidence.json'
     if not path.exists(): sys.exit('RELEASE BLOCKED: no completed cloud verification evidence; no release APK may be generated.')
     e=json.loads(path.read_text(encoding='utf-8'))
-    required=['debug_build','unit_tests','android_lint','install_launch','screen_off_alarm','wake_screen','dismiss_swipe','feishu_foreground','doze','reboot_restore','multiple_alarms','disable_cancel','reenable','edit_cancel_old','deduplicate','secure_lock_refused','notification_denied','process_reclaim','force_stop_recovery']
+    required=['debug_build','unit_tests','android_lint','install_launch','screen_off_alarm','wake_screen','dismiss_swipe','feishu_foreground','doze','reboot_restore','multiple_alarms','disable_cancel','reenable','edit_cancel_old','deduplicate','secure_lock_refused','notification_denied','process_reclaim','force_stop_recovery','notification_preflight','blocked_fsi_diagnosis','compatibility_wake','compatibility_revoked','ui_navigation']
     missing=[x for x in required if e.get('checks',{}).get(x)!='PASS']
     if e.get('source_sha256')!=source_hash(): missing.append('current source digest')
     if e.get('android_api')!=30 or not e.get('emulator_boot_completed'): missing.append('API 30 emulator boot evidence')

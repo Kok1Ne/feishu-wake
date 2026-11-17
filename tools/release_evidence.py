@@ -35,6 +35,11 @@ mapping={
  'deduplicate':['multiple_first.single_trigger','multiple_second.single_trigger','multiple_alarms.no_duplicate'],
  'secure_lock_refused':['secure_lock.alarm_delivered','secure_lock.explicit_failure','secure_lock.no_launch_request','secure_lock.keyguard_retained','secure_lock.target_not_foreground'],
  'notification_denied':['notification_denied.alarm_delivered','notification_denied.explicit_failure','notification_denied.no_launch_request','notification_denied.target_not_foreground'],
+ 'notification_preflight':['preflight.notification_blocked','preflight.no_alarm'],
+ 'blocked_fsi_diagnosis':['fsi_blocked.explicit_failure','fsi_blocked.no_activity_created','fsi_blocked.diagnostic_snapshot','fsi_blocked.no_unconsented_fallback'],
+ 'compatibility_wake':['compatibility.explicit_ui_opt_in','compatibility.initial_asleep','compatibility.initial_keyguard','compatibility.foreground_stable','compatibility.awake','compatibility.keyguard_dismissed','compatibility.single_trigger','compatibility.unlock_before_launch','compatibility.fallback_attempted','compatibility.activity_lifecycle'],
+ 'compatibility_revoked':['compatibility_revoked.explicit_failure','compatibility_revoked.no_launch_request','compatibility_revoked.no_attempt'],
+ 'ui_navigation':['ui.navigation','ui.compatibility_default_off','ui.large_font_test_accessible'],
  'process_reclaim':['process_reclaim.process_killed','process_reclaim.foreground_stable','process_reclaim.single_trigger'],
  'force_stop_recovery':['force_stop.no_execution','force_stop_recovery.next_registered','force_stop_recovery.foreground_stable','force_stop_recovery.single_trigger'],
 }
@@ -65,7 +70,7 @@ evidence={'source_sha256':source_hash(),'source_commit':os.environ['GITHUB_SHA']
           'run_id':verified_run,'release_run_id':os.environ['GITHUB_RUN_ID'],'android_api':30,'emulator_boot_completed':True,
           'checks':checks,'mapping':mapping,'jvm_test_count':count,
           'evidence_files':evidence_files,
-          'limitations':['API 30 emulator, not realme hardware','Forced Doze is not long natural standby',
+          'limitations':['API 30 emulator; device-specific restrictions unverified','Forced Doze is not long natural standby',
                          'Real Feishu launch is not attendance verification',
                          'Unlocked screen may show only a heads-up notification']}
 (ROOT/'release-evidence.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')

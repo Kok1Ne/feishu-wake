@@ -32,10 +32,13 @@ object Notices {
     fun wakeIntent(c: Context,id: String)=Intent(c,WakeActivity::class.java).putExtra("run",id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     fun alarm(c: Context,id: String): Notification {
         val pi=PendingIntent.getActivity(c,301,wakeIntent(c,id),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        return Notification.Builder(c,ALARM).setSmallIcon(R.drawable.ic_wake).setContentTitle("Feishu Wake 定时唤醒")
+        val builder=Notification.Builder(c,ALARM).setSmallIcon(R.drawable.ic_wake).setContentTitle("Feishu Wake 定时唤醒")
             .setContentText("正在尝试点亮屏幕并打开飞书；点按可继续")
             .setCategory(Notification.CATEGORY_ALARM).setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setFullScreenIntent(pi,true).setContentIntent(pi).setAutoCancel(true).setTimeoutAfter(20_000).build()
+            .setContentIntent(pi).setAutoCancel(true).setTimeoutAfter(25_000)
+        // Debug-only fault injection exercises a blocked full-screen delivery on the cloud emulator.
+        if(!(BuildConfig.DEBUG && Store(c).string("suppressFsi")=="on")) builder.setFullScreenIntent(pi,true)
+        return builder.build()
     }
     fun ongoing(c: Context): Notification {
         val pi=PendingIntent.getActivity(c,302,Intent(c,MainActivity::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)

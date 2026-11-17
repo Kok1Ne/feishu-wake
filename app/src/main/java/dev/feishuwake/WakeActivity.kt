@@ -31,9 +31,25 @@ class WakeActivity: Activity() {
         id=intent.getStringExtra("run") ?: ""
         }
         if(!store.valid(id)) { finish(); return }
+        store.put("wakeCreatedRun",id)
+        store.log(id,"activity_created","OK","系统已创建唤醒页面")
+        WakeReadiness.record(this,id,"activity_created")
         setShowWhenLocked(true); setTurnScreenOn(true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        setContentView(TextView(this).apply { text="Feishu Wake\n正在唤醒并请求解除滑动锁屏…"; textSize=22f; setPadding(36,90,36,36) })
+        setContentView(android.widget.LinearLayout(this).apply {
+            orientation=android.widget.LinearLayout.VERTICAL
+            gravity=android.view.Gravity.CENTER
+            setBackgroundColor(android.graphics.Color.rgb(244,247,253))
+            setPadding(32,32,32,32)
+            addView(TextView(this@WakeActivity).apply {
+                text="Feishu Wake"; textSize=26f; setTextColor(android.graphics.Color.rgb(28,43,70))
+                gravity=android.view.Gravity.CENTER
+            })
+            addView(TextView(this@WakeActivity).apply {
+                text="正在唤醒，请稍候"; textSize=16f; setPadding(0,24,0,0)
+                setTextColor(android.graphics.Color.rgb(85,103,131)); gravity=android.view.Gravity.CENTER
+            })
+        })
     }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -41,13 +57,23 @@ class WakeActivity: Activity() {
         handler.removeCallbacksAndMessages(null)
         id=intent.getStringExtra("run") ?: ""
         started=false; launched=false
-        if(!store.valid(id)) finish()
+        if(!store.valid(id)) { finish(); return }
+        store.put("wakeCreatedRun",id)
+        setShowWhenLocked(true); setTurnScreenOn(true)
+        store.log(id,"activity_created","OK","现有唤醒页面收到新的任务")
+        if(hasWindowFocus()) beginWake()
     }
     override fun onResume() {
         super.onResume()
         if(!::store.isInitialized) return
         if(!store.valid(id)) { finish(); return }
-        if(started) return
+        store.put("wakeResumedRun",id)
+        store.log(id,"activity_resumed","OK","唤醒页面已进入前台生命周期")
+        WakeReadiness.record(this,id,"activity_resumed")
+        beginWake()
+    }
+    private fun beginWake() {
+        if(started || !store.valid(id)) return
         started=true
         handler.postDelayed({ checkScreen(0) },100)
     }

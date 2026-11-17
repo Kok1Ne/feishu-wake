@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="automation_toggle" type="id"/>
+    <item name="manual_test" type="id"/>
+    <item name="test_status" type="id"/>
+    <item name="navigation_schedule" type="id"/>
+    <item name="navigation_logs" type="id"/>
+    <item name="navigation_settings" type="id"/>
+    <item name="compatibility_toggle" type="id"/>
+    <item name="readiness_message" type="id"/>
+    <item name="export_diagnostics" type="id"/>
+    <item name="main_scroll" type="id"/>
+</resources>

@@ -35,6 +35,7 @@ class AlarmReceiver: BroadcastReceiver() {
             val id=store.begin(source)
             if(id==null) { store.log("system","trigger","SKIP","已有任务执行中"); return }
             store.log(id,"trigger","OK","来源=$source，延迟=${delay}ms")
+            WakeReadiness.record(context,id,"alarm_received")
             try { context.startForegroundService(Intent(context,RunService::class.java).putExtra("run",id).putExtra("direct",direct)) }
             catch(e: RuntimeException) { store.log(id,"finish","FAIL","服务未启动：${e.javaClass.simpleName}"); store.end(id) }
         }

@@ -1,5 +1,5 @@
 """Validate the signed Release through its real UI on a fresh cloud API 30 emulator."""
-import datetime,hashlib,json,os,re,subprocess,time
+import datetime,hashlib,json,os,re,subprocess,time,urllib.request
 from pathlib import Path
 import xml.etree.ElementTree as ET
 if os.environ.get('GITHUB_ACTIONS')!='true' or os.environ.get('RUNNER_ENVIRONMENT')!='github-hosted':
@@ -66,16 +66,69 @@ def open_main():
     else: raise RuntimeError('Release UI setup did not reach a stable unlocked state')
     result=adb('shell','am','start','-W','-n',PACKAGE+'/dev.feishuwake.MainActivity')
     if 'Status: ok' not in result: raise RuntimeError('Release did not start')
+def tap_resource(resource):
+    for attempt in range(10):
+        adb('shell','uiautomator','dump','/sdcard/release-ui.xml')
+        raw=adb('shell','cat','/sdcard/release-ui.xml')
+        root=ET.fromstring(raw[raw.index('<?xml'):])
+        for node in root.iter('node'):
+            if node.get('resource-id')==resource and node.get('enabled')=='true':
+                b=list(map(int,re.findall(r'\d+',node.get('bounds',''))))
+                if len(b)==4 and b[2]>b[0] and b[3]>b[1]:
+                    adb('shell','input','tap',str((b[0]+b[2])//2),str((b[1]+b[3])//2))
+                    return
+        adb('shell','input','swipe','540','1500','540','600','300')
+    raise RuntimeError('Release UI resource not found: '+resource)
+def capture(name):
+    adb('shell','uiautomator','dump','/sdcard/release-ui.xml')
+    (REPORT/(name+'.xml')).write_text(adb('shell','cat','/sdcard/release-ui.xml'),encoding='utf-8')
+    raw=subprocess.run(['adb','-s','emulator-5554','exec-out','screencap','-p'],capture_output=True,check=True,timeout=30).stdout
+    if not raw.startswith(b'\x89PNG\r\n\x1a\n'): raise RuntimeError('Screenshot is not PNG')
+    (REPORT/(name+'.png')).write_bytes(raw)
+def parse_events(raw):
+    result=[]
+    for line in raw.splitlines():
+        if 'FeishuWake' in line and '{' in line:
+            try: result.append(json.loads(line[line.index('{'):]))
+            except ValueError: pass
+    return result
+
 try:
     record('api30_boot',adb('shell','getprop','ro.build.version.sdk').strip()=='30' and
            adb('shell','getprop','sys.boot_completed').strip()=='1')
-    record('install_release','Success' in adb('install','-r',str(APK),timeout=180))
     record('install_official_feishu','Success' in adb('install','-r',str(Path(os.environ['RUNNER_TEMP'])/'official-feishu.apk'),timeout=240))
     adb('shell','locksettings','set-disabled','false')
     adb('shell','settings','put','secure','lock_screen_lock_after_timeout','0')
     adb('shell','settings','put','global','stay_on_while_plugged_in','0')
     adb('shell','settings','put','system','screen_off_timeout','30000')
+    # Verify a real 1.0.0 -> 1.0.1 update with the published APK and fixed certificate.
+    previous=Path(os.environ['RUNNER_TEMP'])/'FeishuWake-1.0.0.apk'
+    url='https://github.com/Kok1Ne/feishu-wake/releases/download/v1.0.0/FeishuWake-1.0.0.apk'
+    with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'FeishuWake-cloud-validation'}),timeout=90) as response:
+        previous.write_bytes(response.read())
+    record('previous_release_sha256',hashlib.sha256(previous.read_bytes()).hexdigest()=='f9d7b8e6f52a09a51c21ca74b0a09159ddd7975f759c69426b3e9641fac3f759')
+    record('install_previous_release','Success' in adb('install','-r',str(previous),timeout=180))
     open_main()
+    node,_=ui_node('自动化总开关')
+    if node.get('checked')!='true': tap('自动化总开关')
+    before_update=adb('shell','dumpsys','alarm')
+    record('previous_config_enabled',PACKAGE in before_update and '*walarm*:scheduled' in before_update)
+    adb('logcat','-b','all','-c')
+    record('install_release','Success' in adb('install','-r',str(APK),timeout=180))
+    end=time.monotonic()+30
+    while time.monotonic()<end:
+        updated=adb('logcat','-d','-v','brief','-s','FeishuWake:I')
+        if 'MY_PACKAGE_REPLACED' in updated: break
+        time.sleep(1)
+    (REPORT/'update-logcat.txt').write_text(updated,encoding='utf-8')
+    record('release_update_receiver','MY_PACKAGE_REPLACED' in updated)
+    after_update=snapshot('after-update')
+    record('release_schedule_survives_update',PACKAGE in after_update['alarm'] and '*walarm*:scheduled' in after_update['alarm'])
+    open_main()
+    node,_=ui_node('自动化总开关')
+    record('release_config_survives_update',node.get('checked')=='true')
+    tap('自动化总开关')
+    capture('ui-schedule')
     record('release_ui_launch',True)
     adb('logcat','-b','all','-c')
     tap('立即测试',scroll=True)
@@ -108,27 +161,41 @@ try:
     stages=[(r.get('stage'),r.get('status')) for r in rows if r.get('run')==ids[0]]
     record('release_unlock_before_launch',('keyguard','OK') in stages and ('launch','REQUESTED') in stages and
            stages.index(('keyguard','OK'))<stages.index(('launch','REQUESTED')))
-    # Exercise update restoration on the actual release with persisted UI configuration.
+    # The signed release's compatibility route is exercised through its consent UI.
+    # With an unlocked screen the ordinary full-screen intent may stay heads-up only.
     open_main()
-    node,_=ui_node('自动化总开关')
-    if node.get('checked')!='true': tap('自动化总开关')
-    time.sleep(1)
-    before_update=adb('shell','dumpsys','alarm')
-    record('release_ui_schedules_alarm',PACKAGE in before_update and '*walarm*:scheduled' in before_update)
+    tap_resource(PACKAGE+':id/navigation_logs')
+    capture('ui-logs')
+    tap_resource(PACKAGE+':id/navigation_settings')
+    capture('ui-settings')
+    adb('shell','appops','set',PACKAGE,'SYSTEM_ALERT_WINDOW','allow')
+    tap_resource(PACKAGE+':id/compatibility_toggle')
+    tap_resource('android:id/button1')
+    node,_=ui_node('启用兼容唤醒')
+    record('release_compatibility_ui_opt_in',node.get('checked')=='true')
+    tap_resource(PACKAGE+':id/navigation_schedule')
     adb('logcat','-b','all','-c')
-    record('release_cover_install','Success' in adb('install','-r',str(APK),timeout=180))
-    end=time.monotonic()+30
-    while time.monotonic()<end:
-        updated=adb('logcat','-d','-v','brief','-s','FeishuWake:I')
-        if 'MY_PACKAGE_REPLACED' in updated: break
-        time.sleep(1)
-    (REPORT/'update-logcat.txt').write_text(updated,encoding='utf-8')
-    record('release_update_receiver','MY_PACKAGE_REPLACED' in updated)
-    after_update=snapshot('after-update')
-    record('release_schedule_survives_update',PACKAGE in after_update['alarm'] and '*walarm*:scheduled' in after_update['alarm'])
+    tap('立即测试',scroll=True)
+    adb('shell','input','keyevent','3')
+    start=snapshot('compat-before')
+    record('release_compatibility_initial_unlocked',locked(start['window policy']) is False)
+    deadline=time.monotonic()+65
+    while time.monotonic()<deadline and not front(adb('shell','dumpsys','activity','activities')): time.sleep(1)
+    time.sleep(5)
+    after=snapshot('compat-after')
+    raw=adb('logcat','-d','-v','brief','-s','FeishuWake:I')
+    (REPORT/'compat-logcat.txt').write_text(raw,encoding='utf-8')
+    rows=parse_events(raw)
+    record('release_compatibility_requested',sum(r.get('stage')=='compatibility' and r.get('status')=='REQUESTED' for r in rows)==1)
+    record('release_compatibility_foreground_stable',front(after['activity activities']))
+    record('release_compatibility_awake_unlocked','mWakefulness=Awake' in after['power'] and locked(after['window policy']) is False)
+    stages=[(r.get('stage'),r.get('status')) for r in rows]
+    record('release_compatibility_unlock_before_launch',('keyguard','OK') in stages and ('launch','REQUESTED') in stages and stages.index(('keyguard','OK'))<stages.index(('launch','REQUESTED')))
     open_main()
-    node,_=ui_node('自动化总开关')
-    if node.get('checked')=='true': tap('自动化总开关')
+    tap_resource(PACKAGE+':id/navigation_settings')
+    tap_resource(PACKAGE+':id/compatibility_toggle')
+    adb('shell','appops','set',PACKAGE,'SYSTEM_ALERT_WINDOW','default')
+
 except Exception as error:
     checks['blocked']='FAIL'
     print(type(error).__name__+': '+str(error),flush=True)
@@ -136,5 +203,5 @@ finally:
     (REPORT/'logcat.txt').write_text(adb('logcat','-d','-v','threadtime',check=False),encoding='utf-8')
     host.close()
     (REPORT/'results.json').write_text(json.dumps({'checks':checks,'apk_sha256':hashlib.sha256(APK.read_bytes()).hexdigest(),
-        'source_commit':os.environ['GITHUB_SHA'],'note':'API 30 emulator; realme and attendance unverified.'},indent=2),encoding='utf-8')
+        'source_commit':os.environ['GITHUB_SHA'],'note':'API 30 emulator; physical-device policies and attendance unverified.'},indent=2),encoding='utf-8')
     if not checks or any(v!='PASS' for v in checks.values()): raise SystemExit(1)

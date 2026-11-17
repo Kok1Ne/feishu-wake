@@ -48,6 +48,10 @@ class Store(private val context: Context) {
         check(prefs.edit().putString("logs",list.toString()).commit())
         Log.i("FeishuWake",entry.toString())
     }
+    fun events(): List<JSONObject> {
+        val array=try { JSONArray(string("logs")) } catch(_: Exception) { JSONArray() }
+        return (0 until array.length()).map { array.getJSONObject(it) }
+    }
     fun logText(): String {
         val array=try { JSONArray(string("logs")) } catch (_: Exception) { JSONArray() }
         return (array.length()-1 downTo 0).joinToString("\n") { i ->
@@ -72,6 +76,8 @@ class Store(private val context: Context) {
             .put("userUnlocked",context.getSystemService(android.os.UserManager::class.java).isUserUnlocked)
             .put("foregroundEvidencePermission",ForegroundEvidence.allowed(context))
             .put("targetInstalled",context.packageManager.getLaunchIntentForPackage(target())!=null)
+            .put("wakeCreatedRun",string("wakeCreatedRun")).put("wakeResumedRun",string("wakeResumedRun"))
+            .put("currentEnvironment",WakeReadiness.snapshot(context))
             .put("logs",try { JSONArray(string("logs")) } catch (_: Exception) { JSONArray() }).toString(2)
     }
 }

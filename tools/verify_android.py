@@ -467,6 +467,121 @@ def recurrence_matrix():
     sleep_assert('force_stop_recovery')
     assert_success('force_stop_recovery',timeout=max(30,int(due[1]-time.time()+45)))
 
+def ui_tree():
+    import xml.etree.ElementTree as ET
+    adb('shell','uiautomator','dump','/sdcard/feishu-fix-ui.xml')
+    raw=adb('shell','cat','/sdcard/feishu-fix-ui.xml')
+    return ET.fromstring(raw[raw.index('<?xml'):]),raw
+
+def ui_tap(resource=None,text=None,scroll=False):
+    for attempt in range(10 if scroll else 1):
+        root,raw=ui_tree()
+        for node in root.iter('node'):
+            if node.get('package')!=PACKAGE or node.get('enabled')!='true': continue
+            matched=(resource and node.get('resource-id')==resource) or (text and node.get('text')==text)
+            if matched:
+                b=list(map(int,re.findall(r'\d+',node.get('bounds',''))))
+                if len(b)==4 and b[2]>b[0] and b[3]>b[1]:
+                    adb('shell','input','tap',str((b[0]+b[2])//2),str((b[1]+b[3])//2))
+                    return
+        if scroll:
+            size=adb('shell','wm','size')
+            match=re.findall(r'(\d+)x(\d+)',size)[-1]
+            width,height=map(int,match)
+            adb('shell','input','swipe',str(width//2),str(height*3//4),str(width//2),str(height//3),'250')
+    raise RuntimeError('UI control missing: '+str(resource or text))
+
+def capture_ui(name):
+    _,raw=ui_tree()
+    (REPORT/(name+'.xml')).write_text(raw,encoding='utf-8')
+    image=subprocess.run([args.adb,'-P',args.port,'-s',args.serial,'exec-out','screencap','-p'],
+        capture_output=True,timeout=20,check=True).stdout
+    if not image.startswith(b'\x89PNG\r\n\x1a\n'): raise RuntimeError('Invalid screenshot')
+    (REPORT/(name+'.png')).write_bytes(image)
+
+def open_app_tab(tab):
+    prepare_unlocked()
+    adb('shell','am','start','-W','-n',PACKAGE+'/dev.feishuwake.MainActivity')
+    ui_tap(resource=PACKAGE+':id/navigation_'+tab)
+
+def ui_and_compatibility_matrix():
+    global CASE_START
+    control('stop')
+    control('compat_off')
+    control('fsi_on')
+    open_app_tab('schedule')
+    capture_ui('ui-schedule')
+    root,_=ui_tree()
+    ids={n.get('resource-id') for n in root.iter('node')}
+    record('ui.navigation',all(PACKAGE+':id/navigation_'+x in ids for x in ('schedule','logs','settings')))
+    ui_tap(resource=PACKAGE+':id/navigation_logs')
+    capture_ui('ui-logs')
+    ui_tap(resource=PACKAGE+':id/navigation_settings')
+    capture_ui('ui-settings')
+    record('ui.compatibility_default_off',prefs().get('compatWake','')=='')
+    # Stress layout with a 360dp wide screen and larger system font; restore setup afterwards.
+    try:
+        adb('shell','wm','size','720x1280')
+        adb('shell','wm','density','320')
+        adb('shell','settings','put','system','font_scale','1.3')
+        open_app_tab('schedule')
+        capture_ui('ui-small-large-font')
+        ui_tap(resource=PACKAGE+':id/manual_test',scroll=True)
+        record('ui.large_font_test_accessible',int(prefs().get('testDue','0'))>0)
+        control('stop')
+    finally:
+        adb('shell','settings','put','system','font_scale','1.0')
+        adb('shell','wm','size','reset')
+        adb('shell','wm','density','reset')
+
+    notification_switch(False)
+    try:
+        open_app_tab('schedule')
+        ui_tap(resource=PACKAGE+':id/manual_test',scroll=True)
+        root,_=ui_tree()
+        record('preflight.notification_blocked',any(n.get('text')=='先完成设置' for n in root.iter('node')))
+        state=prefs()
+        record('preflight.no_alarm',not state.get('testToken') and int(state.get('testDue','0'))==0)
+        ui_tap(resource='android:id/button2')
+    finally:
+        notification_switch(True)
+
+    control('fsi_off')
+    try:
+        prepare_unlocked()
+        setup_case('fsi_blocked','b')
+        expect_failure('fsi_blocked','screen')
+        rows=events('fsi_blocked')
+        record('fsi_blocked.no_activity_created',not any(r.get('stage')=='activity_created' for r in rows))
+        record('fsi_blocked.diagnostic_snapshot',any(r.get('stage')=='environment' and 'wake_timeout' in r.get('detail','') for r in rows))
+        record('fsi_blocked.no_unconsented_fallback',not any(r.get('stage')=='compatibility' and r.get('status')=='REQUESTED' for r in rows))
+
+        # Cloud setup grants the app-op; enabling the optional mode still requires its real UI consent.
+        control('stop')
+        adb('shell','appops','set',PACKAGE,'SYSTEM_ALERT_WINDOW','allow')
+        open_app_tab('settings')
+        ui_tap(resource=PACKAGE+':id/compatibility_toggle',scroll=True)
+        ui_tap(resource='android:id/button1')
+        record('compatibility.explicit_ui_opt_in',prefs().get('compatWake')=='on')
+        prepare_unlocked()
+        setup_case('compatibility','b')
+        assert_success('compatibility')
+        rows=events('compatibility')
+        record('compatibility.fallback_attempted',sum(r.get('stage')=='compatibility' and r.get('status')=='REQUESTED' for r in rows)==1)
+        record('compatibility.activity_lifecycle',any(r.get('stage')=='activity_created' for r in rows) and any(r.get('stage')=='activity_resumed' for r in rows))
+
+        prepare_unlocked()
+        setup_case('compatibility_revoked','b')
+        adb('shell','appops','set',PACKAGE,'SYSTEM_ALERT_WINDOW','deny')
+        expect_failure('compatibility_revoked','screen')
+        rows=events('compatibility_revoked')
+        record('compatibility_revoked.no_attempt',not any(r.get('stage')=='compatibility' and r.get('status')=='REQUESTED' for r in rows))
+    finally:
+        control('stop')
+        control('fsi_on')
+        control('compat_off')
+        adb('shell','appops','set',PACKAGE,'SYSTEM_ALERT_WINDOW','default')
+
 try:
     if adb('shell', 'getprop', 'ro.build.version.sdk').strip() != '30':
         raise RuntimeError('Expected Android API 30')
@@ -535,6 +650,7 @@ try:
     if args.extended:
         unlocked_observation()
         extended_negatives()
+        ui_and_compatibility_matrix()
         recurrence_matrix()
 
     # Device-side assertions are separate from the background Activity launch trials.
@@ -558,7 +674,7 @@ finally:
     log.close()
     result = {'target': args.target, 'checks': checks, 'release_eligible': False,
               'extended_matrix': args.extended,
-              'note': 'API 30 emulator only; no realme or attendance claim. Forced Doze is not natural long-duration standby.'}
+              'note': 'API 30 emulator only; no device-brand compatibility or attendance claim. Forced Doze is not natural long-duration standby.'}
     (REPORT/'android-host-results.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps(result, ensure_ascii=False), flush=True)
     if not checks or any(row['status'] != 'PASS' for row in checks.values()):

@@ -18,10 +18,10 @@
 - 正式包名固定为 `dev.feishuwake`。密钥由 GitHub Secrets 私密保存；仓库仅记录公钥证书摘要及恢复代码。不能用新密钥替换已有密钥。
 - 测试原始证据和最终结果以具体运行产物为准；仓库中的旧日期报告是历史记录，不是当前版本成功声明。
 
-固定定时使用系统可见的 `setAlarmClock`，避免普通闹钟被待机配额延后；状态栏可能显示下一次闹钟。15 秒手动测试使用 `setExactAndAllowWhileIdle`。手机亮屏且已解锁时，全屏通知可能只显示横幅，需要点按。
+固定定时使用系统可见的 `setAlarmClock`，避免普通闹钟被待机配额延后；状态栏可能显示下一次闹钟。15 秒手动测试使用 `setExactAndAllowWhileIdle`。手机亮屏且已解锁时，全屏通知可能只显示横幅。Android 11 提供默认关闭的兼容唤醒选项，须用户主动授权后使用。
 
 ## 验证边界
 
-真实飞书前台由云端 ADB 独立观察，但没有登录账号或验证考勤。强制 Doze 不是自然长时间待机。自启动和锁屏策略仍待指定真机首次安装验收；详见 [待真机验证事项](reports/REALME_COMPATIBILITY.md)。
+真实飞书前台由云端 ADB 独立观察，但没有登录账号或验证考勤。强制 Doze 不是自然长时间待机。不同设备的自启动和锁屏策略仍需真机确认；详见 [待真机验证事项](docs/ANDROID11_COMPATIBILITY.md)。
 
 源代码为 Android Studio 工程，依赖 Gradle 8.9、JDK 17、compileSdk 35；API 30 是当前验证范围。研究项目及许可证核查见 [REFERENCES.md](REFERENCES.md)，没有复制无许可证项目代码。

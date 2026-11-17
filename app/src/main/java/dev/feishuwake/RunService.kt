@@ -27,7 +27,11 @@ class RunService: Service() {
             return START_NOT_STICKY
         }
         if(id==run) return START_NOT_STICKY
+        handler.removeCallbacksAndMessages(null)
+        if(cpu?.isHeld==true) cpu?.release()
+        observed=false; foregroundLogged=false; holding=false; launchedAt=0
         id=run
+        store.put("wakeCreatedRun",""); store.put("wakeResumedRun","")
         try {
             startForeground(302,Notices.ongoing(this))
             val pm=getSystemService(PowerManager::class.java)
@@ -38,9 +42,38 @@ class RunService: Service() {
             if(issue!=null && !direct && !fromActivity) { fail("screen",issue); return START_NOT_STICKY }
             if(fromActivity) { /* A route already has a visible Activity. */ }
             else if(direct) startActivity(Notices.wakeIntent(this,id))
-            else Notices.manager(this).notify(301,Notices.alarm(this,id))
+            else {
+                Notices.manager(this).cancel(303)
+                Notices.manager(this).notify(301,Notices.alarm(this,id))
+                store.log(id,"notification","REQUESTED","已提交全屏闹钟通知，等待系统打开唤醒页面")
+                val expectedRun=id
+                handler.postDelayed({
+                    if(id==expectedRun && store.valid(expectedRun) && !holding &&
+                        store.string("wakeResumedRun")!=expectedRun) {
+                        if(WakeReadiness.compatibilityReady(this)) {
+                            WakeReadiness.record(this,expectedRun,"compatibility_attempt")
+                            store.log(expectedRun,"compatibility","REQUESTED","Android 11 兼容唤醒已授权，尝试直接打开唤醒页面")
+                            try { startActivity(Notices.wakeIntent(this,expectedRun)) }
+                            catch(e: RuntimeException) { store.log(expectedRun,"compatibility","FAIL",e.javaClass.simpleName) }
+                        } else {
+                            store.log(expectedRun,"compatibility","SKIPPED","兼容唤醒未启用或未授权，继续等待系统全屏通知")
+                        }
+                    }
+                },3_000)
+            }
             handler.postDelayed({
-                if(!holding && store.valid(id)) fail("screen","20 秒内唤醒页面未完成；全屏通知可能被限制。亮屏已解锁时系统可能仅显示横幅。")
+                if(!holding && store.valid(id)) {
+                    WakeReadiness.record(this,id,"wake_timeout")
+                    val created=store.string("wakeCreatedRun")==id
+                    val resumed=store.string("wakeResumedRun")==id
+                    val detail=when {
+                        !created -> "系统未打开唤醒页面。请检查通知的横幅与锁屏显示；仍失败可在设置中启用兼容唤醒"
+                        !resumed -> "唤醒页面已创建但未进入可见状态，可能受到锁屏或后台弹出限制"
+                        else -> "唤醒页面已显示，但未完成解锁与应用交接，请查看本次步骤"
+                    }
+                    store.log(id,"activity_timeout","INFO","created="+created+"; resumed="+resumed)
+                    fail("screen",detail)
+                }
             },20_000)
         } catch(e: RuntimeException) { fail("screen","唤醒流程异常：${e.javaClass.simpleName}") }
         return START_NOT_STICKY
@@ -78,6 +111,7 @@ class RunService: Service() {
         })
     }
     private fun fail(stage: String,detail: String) {
+        WakeReadiness.record(this,id,"failure")
         store.log(id,stage,"FAIL",detail)
         store.log(id,"keyguard","SKIPPED","唤醒流程未完成")
         store.log(id,"launch","SKIPPED","唤醒流程未完成")

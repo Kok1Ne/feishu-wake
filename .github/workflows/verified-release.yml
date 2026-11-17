@@ -7,7 +7,7 @@ on:
         required: true
         type: string
 permissions:
-  contents: read
+  contents: write
   actions: read
 env:
   FEISHU_EVIDENCE_RUN_ID: ${{ inputs.verification_run_id }}
@@ -112,10 +112,14 @@ jobs:
       - name: Save final verified APK, source and reports
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: FeishuWake-1.0.0-verified-release
+          name: FeishuWake-1.0.1-verified-release
           path: deliverables/
           retention-days: 14
           if-no-files-found: error
+      - name: Publish the verified Android 11 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 release/publish_current.py
       - name: Preserve diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f

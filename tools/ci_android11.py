@@ -44,7 +44,7 @@ def main():
         'target': TARGET,
         'release_eligible': False,
         'scope': 'Extended API 30 acceptance matrix' if EXTENDED else 'Core API 30 probe',
-        'unverified': ['See individual checks for actual results', 'natural long-duration standby', 'realme UI 2.0'],
+        'unverified': ['See individual checks for actual results', 'natural long-duration standby', 'device-specific background restrictions'],
     }
     result_code = 1
     try:
@@ -75,7 +75,7 @@ def main():
             reader=threading.Thread(target=stream,daemon=True)
             reader.start()
             try:
-                result_code=proc.wait(timeout=1500 if EXTENDED else 420)
+                result_code=proc.wait(timeout=1800 if EXTENDED else 420)
             except subprocess.TimeoutExpired:
                 proc.kill();proc.wait()
                 raise

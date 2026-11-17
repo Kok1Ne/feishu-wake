@@ -20,7 +20,7 @@ if '--verify' in sys.argv:
     if not found or found.group(1)!=expected or 'Verified using v2 scheme (APK Signature Scheme v2): true' not in sig:
         raise SystemExit('Release signing certificate/scheme mismatch')
     badging=run([str(sdk/'aapt'),'dump','badging',str(APK)])
-    if "package: name='dev.feishuwake'" not in badging or "versionName='1.0.0'" not in badging:
+    if "package: name='dev.feishuwake'" not in badging or "versionName='1.0.1'" not in badging:
         raise SystemExit('Unexpected Release identity')
     if 'application-debuggable' in badging or "uses-permission: name='android.permission.INTERNET'" in badging:
         raise SystemExit('Unexpected debug/network capability in Release')
@@ -31,7 +31,7 @@ if '--verify' in sys.argv:
     (REPORT/'apk-badging.txt').write_text(badging,encoding='utf-8')
     (REPORT/'apk-manifest.txt').write_text(manifest,encoding='utf-8')
     (REPORT/'zipalign.txt').write_text(aligned,encoding='utf-8')
-    (REPORT/'identity.json').write_text(json.dumps({'package':'dev.feishuwake','version':'1.0.0',
+    (REPORT/'identity.json').write_text(json.dumps({'package':'dev.feishuwake','version':'1.0.1',
         'apk_sha256':sha(APK),'certificate_sha256':expected,'source_commit':os.environ['GITHUB_SHA']},indent=2),encoding='utf-8')
     print('Release APK verified: '+sha(APK))
 elif '--package' in sys.argv:
@@ -51,18 +51,18 @@ elif '--package' in sys.argv:
         raise SystemExit('Release smoke test belongs to a different source')
     out=ROOT/'deliverables'
     out.mkdir(exist_ok=True)
-    shutil.copy2(APK,out/'FeishuWake-1.0.0.apk')
+    shutil.copy2(APK,out/'FeishuWake-1.0.1.apk')
     shutil.copy2(REPORT/'signature.txt',out/'APK-SIGNATURE.txt')
     shutil.copy2(ROOT/'docs/USER_GUIDE_ZH.md',out/'USER_GUIDE_ZH.md')
-    shutil.copy2(ROOT/'reports/REALME_COMPATIBILITY.md',out/'REALME_COMPATIBILITY.md')
+    shutil.copy2(ROOT/'docs/ANDROID11_COMPATIBILITY.md',out/'ANDROID11_COMPATIBILITY.md')
     (out/'SOURCE_COMMIT.txt').write_text(os.environ['GITHUB_SHA']+'\n',encoding='utf-8')
-    run(['git','archive','--format=zip','--prefix=FeishuWake-1.0.0/','--output='+str(out/'FeishuWake-AndroidStudio-source.zip'),'HEAD'])
+    run(['git','archive','--format=zip','--prefix=FeishuWake-1.0.1/','--output='+str(out/'FeishuWake-AndroidStudio-source.zip'),'HEAD'])
     with zipfile.ZipFile(out/'FeishuWake-cloud-evidence.zip','w',zipfile.ZIP_DEFLATED) as z:
         for folder in ['reports/ci','reports/release-build','reports/release-device','app/build/reports','app/build/test-results']:
             for p in sorted((ROOT/folder).rglob('*')):
                 if p.is_file(): z.write(p,p.relative_to(ROOT).as_posix())
         z.write(ROOT/'release-evidence.json','release-evidence.json')
-    rows=['# Feishu Wake 1.0.0 云端验收报告','',
+    rows=['# Feishu Wake 1.0.1 云端验收报告','',
         '源码提交：'+os.environ['GITHUB_SHA'],
         '运行记录：https://github.com/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+os.environ['GITHUB_RUN_ID'],'',
         '环境：GitHub 标准 Ubuntu 24.04 云端运行器、JDK 17、Gradle 8.9、Android SDK Platform 30/35、Build Tools 35、真实启动的 API 30 Google APIs 模拟器、KVM 硬件加速。',
@@ -85,8 +85,8 @@ elif '--package' in sys.argv:
         '固定签名证书 SHA-256：'+identity['certificate_sha256'],'',
         '## 结果边界','',
         '- 强制 Doze 验证的是 15 秒单次闹钟及唤醒流程；不是自然长时间待机。固定时刻采用系统可见的 setAlarmClock，重启和多次执行均按真实时钟等待验证。',
-        '- 已解锁亮屏时全屏通知可能仅显示横幅，需要点按；原始 unlocked 观察结果见自动化日志。',
-        '- realme UI 2.0 自启动、冻结、锁屏和电池策略仍待指定真机一次最终验收。',
+        '- 默认全屏通知在已解锁亮屏时可能仅显示横幅。可选兼容唤醒需要主动授权，相关正常、阻断和撤权场景分别收集证据。',
+        '- Android 11 不同设备的自启动、后台冻结、通知和锁屏策略仍待真机确认；模拟器通过不代表手机已经通过。',
         '- 实际飞书前台由模拟器 ADB 独立核实；应用默认日志仅记启动请求，不能把它当作考勤成功。',
         '- 安全密码锁屏明确拒绝；用户强制停止后必须重新打开本应用。',
         '- 构建、lint、Instrumentation、ADB、Logcat、系统状态快照和文件校验均见 cloud-evidence 压缩包。']
