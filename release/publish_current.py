@@ -1,5 +1,5 @@
 """Publish only the signed, tested files from this exact cloud workflow."""
-import hashlib,json,os,subprocess,urllib.request
+import hashlib,json,os,subprocess,time,urllib.error,urllib.request
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'deliverables'
@@ -69,8 +69,16 @@ for asset in assets:
         raise SystemExit('Remote asset checksum mismatch: '+name)
 published=json.loads(gh('api','--method','PATCH',f'repos/{REPO}/releases/{rid}','--input','-',body={'draft':False,'make_latest':'true'}))
 if published['draft']: raise SystemExit('Release still draft')
-apk=next(x for x in assets if x['name']=='FeishuWake-1.0.1.apk')
-with urllib.request.urlopen(urllib.request.Request(apk['browser_download_url'],headers={'User-Agent':'FeishuWake-cloud-validation'}),timeout=90) as response:
-    digest=hashlib.sha256(response.read()).hexdigest()
+# Re-read public URLs after publication: the earlier asset objects came from a draft.
+public_assets=json.loads(gh('api',f'repos/{REPO}/releases/{rid}/assets'))
+apk=next(x for x in public_assets if x['name']=='FeishuWake-1.0.1.apk')
+for attempt in range(6):
+    try:
+        with urllib.request.urlopen(urllib.request.Request(apk['browser_download_url'],headers={'User-Agent':'FeishuWake-cloud-validation'}),timeout=90) as response:
+            digest=hashlib.sha256(response.read()).hexdigest()
+        break
+    except urllib.error.HTTPError as error:
+        if error.code not in (404,429,500,502,503,504) or attempt==5: raise
+        time.sleep(2*(attempt+1))
 if digest!=expected['FeishuWake-1.0.1.apk']: raise SystemExit('Published download checksum mismatch')
 print('Published and verified: '+published['html_url'])

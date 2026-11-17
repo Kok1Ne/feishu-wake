@@ -1,0 +1,29 @@
+name: Verify published Android 11 release downloads
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release/verify_published.py'
+      - '.github/workflows/verify-published.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  public-readback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Verify all published bytes against completed tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 release/verify_published.py
+      - name: Preserve public download verification
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: FeishuWake-1.0.1-public-download-verification
+          path: reports/public-readback/
+          if-no-files-found: error
+          retention-days: 14
