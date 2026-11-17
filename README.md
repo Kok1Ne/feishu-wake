@@ -2,6 +2,10 @@
 
 原生 Kotlin Android 工具：按选定星期及多个时间唤醒屏幕、解除非安全滑动锁屏并打开飞书。目标设备为 realme GT 大师探索版 / realme UI 2.0 / Android 11。
 
+## 正式版本 1.0.0
+
+[云端验收与签名包复测均通过](reports/CLOUD_STATUS.md)，构建源码为 `0093293c1f29287012f41281b836e72308f04872`。[正式交付产物](https://github.com/Kok1Ne/feishu-wake/actions/runs/44051893821/artifacts/14313828841) 包含 APK、源码及全部报告。realme 真机兼容性仍待首次安装验收。
+
 ## 使用
 
 请使用通过云端门槛后生成的正式签名 APK。首次安装先完成一次 15 秒延迟息屏测试，确认飞书真正进入前台，再打开长期定时。详细步骤见 [中文使用说明](docs/USER_GUIDE_ZH.md)。
