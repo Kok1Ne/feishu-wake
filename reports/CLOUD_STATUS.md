@@ -1,24 +1,10 @@
-# 云端验证状态
+# 云端状态（2026-11-17）
 
-更新：2026-11-17（北京时间）。
+仓库已改为公开。当前构建和模拟器在标准 GitHub Actions Ubuntu 云端运行器中执行，不在用户电脑安装或运行 Android SDK / Emulator。
 
-- 仓库已按用户要求公开：https://github.com/Kok1Ne/feishu-wake 。
-- 使用 GitHub 托管的标准 Ubuntu 24.04 运行器；SDK、编译和模拟器只在云端运行。
-- 与本地 Windows 环境的历史结果分开记录；不再在用户电脑安装或运行 Android 工具。
-- 公开仓库的标准运行器计算不扣私有仓库包含额度。依据：https://docs.github.com/en/billing/concepts/product-billing/github-actions 。
-
-## 已实际运行
-
-| 运行 | 提交 | 结果 |
-|---|---|---|
-| [1](https://github.com/Kok1Ne/feishu-wake/actions/runs/44032716240) | b7f662c | sdkmanager 不在 PATH，已补 SDK 初始化 |
-| [2](https://github.com/Kok1Ne/feishu-wake/actions/runs/44033067471) | cc4f756 | SDK 初始化引用已退役的 tools 包，已改为 platform-tools |
-| [3](https://github.com/Kok1Ne/feishu-wake/actions/runs/44033270243) | 6242c9c | JDK/KVM、SDK、编译、JVM 测试、Lint 步骤通过；模拟器未启动：云端剩余 7276.84 MB，创建 userdata 需要 7372.80 MB |
-
-运行 3 的模拟器启动失败，未执行设备内测试，不能作为功能通过的证据。本次修复仅清理临时云端运行器中不使用的 NDK/CMake，并增加息屏、滑动锁屏、前台状态及解锁与启动顺序的独立断言；修复后的结果以新运行证据为准。
-
-## 仍未达到交付门槛
-
-当前没有 Release APK。真实飞书前台、Doze、重启恢复、多任务、关闭取消和 realme UI 2.0 真机行为仍需验证。测试夹具不是飞书客户端。realme 厂商行为必须由最终真机验收确认。
-
-代码或测试脚本修改会自动运行此云端检查，也保留手动运行入口。只上传报告和日志，不向用户交付开发 APK，也不包含签名密钥。
+- 第 6 轮（44036776471）：API 30 真实官方飞书的息屏触发、点亮、非安全锁屏解除、实际前台保持及基础测试通过。
+- 第 7 轮（44037848836）：扩展矩阵暴露普通精确闹钟重启后延后，以及几个测试准备/读取时序问题。详见 ACCEPTANCE_ITERATION_7.md。
+- 第 8 轮（44042461792）：强制 Doze 完整流程通过；亮屏解锁情况下观察到仅横幅并明确失败。安全锁屏拒绝通过。通知设置页面被刚移除 PIN 后残留的锁屏遮挡，测试脚本停止；并未宣称完整通过。
+- 本次提交修正通知设置的准备阶段，增加正式包实际界面复测与同源码证据复用。是否通过必须查本提交对应 Actions 运行结果。
+- 只有完整矩阵成功、稳定密钥签名校验成功、正式 APK 在全新 API 30 模拟器复测成功后才输出最终交付物。
+- realme UI 2.0 真机和飞书考勤从未被标记为已通过。

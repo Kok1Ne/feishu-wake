@@ -35,9 +35,19 @@ class WakeActivity: Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(TextView(this).apply { text="Feishu Wake\n正在唤醒并请求解除滑动锁屏…"; textSize=22f; setPadding(36,90,36,36) })
     }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handler.removeCallbacksAndMessages(null)
+        id=intent.getStringExtra("run") ?: ""
+        started=false; launched=false
+        if(!store.valid(id)) finish()
+    }
     override fun onResume() {
         super.onResume()
-        if(!::store.isInitialized || !store.valid(id) || started) return
+        if(!::store.isInitialized) return
+        if(!store.valid(id)) { finish(); return }
+        if(started) return
         started=true
         handler.postDelayed({ checkScreen(0) },100)
     }
@@ -55,16 +65,17 @@ class WakeActivity: Activity() {
         if(!keyguard.isKeyguardLocked) { store.log(id,"keyguard","OK","当前没有锁屏"); launch(); return }
         if(keyguard.isKeyguardSecure) { fail("keyguard","检测到安全锁屏；请自行解锁，不尝试绕过认证"); return }
         store.log(id,"keyguard_request","REQUESTED","已请求系统解除非安全锁屏")
-        handler.postDelayed({ if(!launched && store.valid(id)) fail("keyguard","解除锁屏请求超时") },8000)
+        val requestedRun=id
+        handler.postDelayed({ if(!launched) { if(store.valid(id)) fail("keyguard","解除锁屏请求超时") else finish() } },8000)
         try {
             keyguard.requestDismissKeyguard(this,object: KeyguardManager.KeyguardDismissCallback() {
                 override fun onDismissSucceeded() {
-                    if(!store.valid(id)) return
+                    if(id!=requestedRun || !store.valid(id)) return
                     if(keyguard.isKeyguardLocked) { fail("keyguard","系统回调成功但锁屏仍存在"); return }
                     store.log(id,"keyguard","OK","系统确认已解除非安全锁屏"); launch()
                 }
-                override fun onDismissCancelled() { fail("keyguard","系统取消了解锁请求") }
-                override fun onDismissError() { fail("keyguard","系统拒绝解除锁屏") }
+                override fun onDismissCancelled() { if(id==requestedRun) fail("keyguard","系统取消了解锁请求") }
+                override fun onDismissError() { if(id==requestedRun) fail("keyguard","系统拒绝解除锁屏") }
             })
         } catch(e: RuntimeException) { fail("keyguard",e.javaClass.simpleName) }
     }

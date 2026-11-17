@@ -76,7 +76,7 @@ jobs:
           sdkmanager 'platforms;android-30' 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools' 2>&1 | tee reports/ci/sdk-install.log
       - name: Check cloud Python entry points
         run: |
-          python3 -m py_compile tools/*.py research/*.py
+          python3 -m py_compile tools/*.py research/*.py release/*.py
           node --check signing/vault.mjs
       - name: Compile internal test packages and run JVM tests and lint
         run: |

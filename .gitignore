@@ -9,3 +9,7 @@ release-evidence.json
 .kotlin/
 __pycache__/
 reports/ci/
+*.p12
+reports/release-build/
+reports/release-device/
+deliverables/

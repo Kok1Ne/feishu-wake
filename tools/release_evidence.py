@@ -7,6 +7,7 @@ ROOT=Path(__file__).resolve().parents[1]
 if os.environ.get('GITHUB_ACTIONS')!='true':
     raise SystemExit('Evidence aggregation is cloud-only')
 ci=ROOT/'reports/ci'
+verified_run=os.environ.get('FEISHU_EVIDENCE_RUN_ID',os.environ['GITHUB_RUN_ID'])
 raw=json.loads((ci/'feishu/android-host-results.json').read_text())
 fixture=json.loads((ci/'mock/android-host-results.json').read_text())
 status=json.loads((ci/'feishu/ci-status.json').read_text())
@@ -17,7 +18,7 @@ for kind,result in [('feishu',raw),('mock',fixture)]:
     if not result['checks'] or any(v.get('status')!='PASS' for v in result['checks'].values()):
         raise SystemExit(kind+' contains unsuccessful cloud checks')
     s=json.loads((ci/kind/'ci-status.json').read_text())
-    if s.get('probe_exit_code')!=0 or s.get('source_commit')!=os.environ['GITHUB_SHA'] or s.get('run_id')!=os.environ['GITHUB_RUN_ID']:
+    if s.get('probe_exit_code')!=0 or s.get('source_commit')!=os.environ['GITHUB_SHA'] or s.get('run_id')!=verified_run:
         raise SystemExit(kind+' evidence does not belong to this successful source/run')
 mapping={
  'install_launch':['install_launch'],
@@ -61,7 +62,7 @@ evidence_files=[{'path':p.relative_to(ROOT).as_posix(),'sha256':hashlib.sha256(p
 checks={k:'PASS' for k in mapping}
 checks.update(debug_build='PASS',unit_tests='PASS',android_lint='PASS')
 evidence={'source_sha256':source_hash(),'source_commit':os.environ['GITHUB_SHA'],
-          'run_id':os.environ['GITHUB_RUN_ID'],'android_api':30,'emulator_boot_completed':True,
+          'run_id':verified_run,'release_run_id':os.environ['GITHUB_RUN_ID'],'android_api':30,'emulator_boot_completed':True,
           'checks':checks,'mapping':mapping,'jvm_test_count':count,
           'evidence_files':evidence_files,
           'limitations':['API 30 emulator, not realme hardware','Forced Doze is not long natural standby',

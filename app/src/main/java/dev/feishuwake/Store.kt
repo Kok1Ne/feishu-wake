@@ -9,7 +9,7 @@ import org.json.JSONObject
 import java.time.Instant
 import java.util.UUID
 
-class Store(context: Context) {
+class Store(private val context: Context) {
     private val prefs = context.getSharedPreferences("wake", Context.MODE_PRIVATE)
     fun config(): Config = try {
         val json = JSONObject(prefs.getString("config", "{}") ?: "{}")
@@ -54,5 +54,24 @@ class Store(context: Context) {
             val e=array.getJSONObject(i)
             "${e.getString("at")} [${e.getString("stage")}] ${e.getString("status")} ${e.getString("detail")}" }
     }
-    fun export(): String = JSONObject().put("appVersion",BuildConfig.VERSION_NAME).put("api",Build.VERSION.SDK_INT).put("manufacturer",Build.MANUFACTURER).put("model",Build.MODEL).put("timezone",java.time.ZoneId.systemDefault().id).put("logs",try { JSONArray(string("logs")) } catch (_: Exception) { JSONArray() }).toString(2)
+    fun export(): String {
+        val keyguard=context.getSystemService(android.app.KeyguardManager::class.java)
+        val power=context.getSystemService(android.os.PowerManager::class.java)
+        val notices=context.getSystemService(android.app.NotificationManager::class.java)
+        return JSONObject().put("appVersion",BuildConfig.VERSION_NAME)
+            .put("api",Build.VERSION.SDK_INT).put("manufacturer",Build.MANUFACTURER)
+            .put("model",Build.MODEL).put("timezone",java.time.ZoneId.systemDefault().id)
+            .put("config",JSONObject(string("config").ifEmpty { "{}" }))
+            .put("nextDue",long("nextDue")).put("testDue",long("testDue"))
+            .put("activeRun",active()).put("exactAlarmsAllowed",AlarmScheduler.exactAllowed(context))
+            .put("notificationsEnabled",notices.areNotificationsEnabled())
+            .put("alarmChannelImportance",notices.getNotificationChannel(Notices.ALARM)?.importance ?: -1)
+            .put("batteryOptimizationExempt",power.isIgnoringBatteryOptimizations(context.packageName))
+            .put("interactive",power.isInteractive).put("keyguardLocked",keyguard.isKeyguardLocked)
+            .put("deviceSecure",keyguard.isDeviceSecure)
+            .put("userUnlocked",context.getSystemService(android.os.UserManager::class.java).isUserUnlocked)
+            .put("foregroundEvidencePermission",ForegroundEvidence.allowed(context))
+            .put("targetInstalled",context.packageManager.getLaunchIntentForPackage(target())!=null)
+            .put("logs",try { JSONArray(string("logs")) } catch (_: Exception) { JSONArray() }).toString(2)
+    }
 }

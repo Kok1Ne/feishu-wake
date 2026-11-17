@@ -110,8 +110,21 @@ def wait_locked_asleep(timeout=7):
 def notification_switch(enabled):
     """Use Android Settings to change the real package notification switch."""
     import xml.etree.ElementTree as ET
+    # Setup only: after removing the test PIN, SystemUI can retain its old lock surface.
+    # Cycle the display and dismiss it before opening Settings, never during an alarm trial.
+    adb('shell','input','keyevent','223')
+    time.sleep(.5)
     adb('shell','input','keyevent','224')
-    adb('shell','wm','dismiss-keyguard')
+    until=time.monotonic()+10
+    while time.monotonic()<until:
+        adb('shell','wm','dismiss-keyguard',check=False)
+        adb('shell','input','keyevent','82')
+        if keyguard(adb('shell','dumpsys','window','policy')) is False: break
+        adb('shell','input','swipe','540','1500','540','400','300')
+        time.sleep(.4)
+    if keyguard(adb('shell','dumpsys','window','policy')) is not False:
+        raise RuntimeError('Could not restore an unlocked Settings setup after the test PIN')
+    adb('shell','input','keyevent','3')
     adb('shell','am','start','-W','-a','android.settings.APP_NOTIFICATION_SETTINGS',
         '--es','android.provider.extra.APP_PACKAGE',PACKAGE)
     def read_switch():
@@ -126,7 +139,13 @@ def notification_switch(enabled):
         def bounds(n): return list(map(int,re.findall(r'\d+',n.get('bounds',''))))
         candidates.sort(key=lambda n:bounds(n)[1])
         return candidates[0],bounds(candidates[0])
-    switch,bounds=read_switch()
+    for attempt in range(4):
+        try:
+            switch,bounds=read_switch()
+            break
+        except RuntimeError:
+            if attempt==3: raise
+            time.sleep(1)
     if (switch.get('checked')=='true')!=enabled:
         x1,y1,x2,y2=bounds
         adb('shell','input','tap',str((x1+x2)//2),str((y1+y2)//2))

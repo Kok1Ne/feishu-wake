@@ -1,0 +1,130 @@
+name: Android 11 verified Release
+on:
+  workflow_dispatch:
+    inputs:
+      verification_run_id:
+        description: Successful Android 11 acceptance run for this exact commit
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+env:
+  FEISHU_EVIDENCE_RUN_ID: ${{ inputs.verification_run_id }}
+concurrency:
+  group: verified-release
+  cancel-in-progress: false
+jobs:
+  verified-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out this source revision
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Prepare logs and require KVM
+        run: |
+          mkdir -p reports/release-build
+          git rev-parse HEAD > reports/release-build/source-commit.txt
+          uname -a > reports/release-build/host.txt
+          test -c /dev/kvm
+          # Restrict the permission change to this disposable runner's KVM device.
+          if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+            sudo chgrp "$(id -gn)" /dev/kvm
+            sudo chmod g+rw /dev/kvm
+          fi
+          test -r /dev/kvm && test -w /dev/kvm
+          ls -l /dev/kvm >> reports/release-build/host.txt
+      - name: Set up Android command-line tools on the cloud runner
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: 'false'
+      - name: Free unused packages on the disposable cloud runner
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$ANDROID_HOME" = /usr/local/lib/android/sdk
+          df -h . | tee reports/release-build/disk-before.txt
+          # Kotlin/Java build: preinstalled NDK/CMake are unused. These are cloud paths.
+          for unused in "$ANDROID_HOME/ndk" "$ANDROID_HOME/cmake"; do
+            if [ -d "$unused" ]; then
+              du -sh "$unused" | tee -a reports/release-build/disk-before.txt
+              rm -rf -- "$unused"
+            fi
+          done
+          df -h . | tee reports/release-build/disk-after.txt
+      - name: Install compile SDKs
+        run: |
+          sdkmanager 'platforms;android-30' 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools' 2>&1 | tee reports/release-build/sdk-install.log
+      - name: Check cloud Python entry points
+        run: |
+          python3 -m py_compile tools/*.py research/*.py release/*.py
+          node --check signing/vault.mjs
+      - name: Import completed verification for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 release/fetch_evidence.py
+      - name: Build source-bound release evidence
+        run: python3 tools/release_evidence.py
+      - name: Restore the private fixed signing key
+        env:
+          FEISHU_SIGNING_PASSWORD: ${{ secrets.FEISHU_SIGNING_PASSWORD }}
+          FEISHU_SIGNING_VAULT: ${{ secrets.FEISHU_SIGNING_VAULT }}
+        run: node signing/vault.mjs restore
+      - name: Build and lint the signed Release after the gate passes
+        run: |
+          mkdir -p reports/release-build
+          bash ./gradlew --no-daemon --console=plain :app:assembleRelease :app:lintRelease 2>&1 | tee reports/release-build/gradle-release.log
+          python3 release/package_release.py --verify
+      - name: Fetch the official Feishu client for signed-package testing
+        env:
+          FEISHU_KEEP_PACKAGE: '1'
+        run: python3 research/feishu_download_probe.py 2>&1 | tee reports/release-build/feishu-package.log
+      - name: Install the signed Release on a fresh API 30 emulator
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          cores: 4
+          ram-size: 4096M
+          disk-size: 4096M
+          emulator-port: 5554
+          emulator-boot-timeout: 300
+          force-avd-creation: 'true'
+          disable-linux-hw-accel: 'false'
+          disable-animations: 'false'
+          emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim -accel on
+          script: python3 release/verify_release.py
+      - name: Package completed deliverables
+        run: python3 release/package_release.py --package
+      - name: Save final verified APK, source and reports
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: FeishuWake-1.0.0-verified-release
+          path: deliverables/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Preserve diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: release-diagnostics-${{ github.run_id }}
+          retention-days: 14
+          path: |
+            reports/ci/
+            reports/release-build/
+            reports/release-device/
+            app/build/reports/
+            app/build/test-results/
