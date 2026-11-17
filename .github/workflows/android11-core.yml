@@ -1,4 +1,4 @@
-name: Android 11 core probe (not release)
+name: Android 11 acceptance (not release)
 
 # Standard public-repository runner only. No release/signing in this workflow.
 on:
@@ -74,6 +74,8 @@ jobs:
       - name: Install compile SDKs
         run: |
           sdkmanager 'platforms;android-30' 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools' 2>&1 | tee reports/ci/sdk-install.log
+      - name: Check cloud Python entry points
+        run: python3 -m py_compile tools/*.py research/*.py
       - name: Compile internal test packages and run JVM tests and lint
         run: |
           bash ./gradlew --no-daemon --console=plain :app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:assembleDebugAndroidTest :testtarget:assembleDebug 2>&1 | tee reports/ci/gradle.log
@@ -81,7 +83,7 @@ jobs:
         env:
           FEISHU_KEEP_PACKAGE: '1'
         run: python3 research/feishu_download_probe.py 2>&1 | tee reports/ci/feishu-package.log
-      - name: Boot API 30 and test fixture then real Feishu
+      - name: Boot API 30 and run real Feishu acceptance then fixture control
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
           api-level: 30
@@ -97,8 +99,8 @@ jobs:
           disable-animations: 'false'
           emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim -accel on
           script: |
+            FEISHU_PROBE_TARGET=feishu FEISHU_PROBE_EXTENDED=1 python3 tools/ci_android11.py
             python3 tools/ci_android11.py
-            FEISHU_PROBE_TARGET=feishu python3 tools/ci_android11.py
       - name: Save logs and test reports only
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

@@ -14,6 +14,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = os.environ.get('FEISHU_PROBE_TARGET', 'mock')
+EXTENDED = os.environ.get('FEISHU_PROBE_EXTENDED') == '1'
 if TARGET not in ('mock', 'feishu'):
     raise SystemExit('Unknown probe target')
 REPORT = ROOT / 'reports' / 'ci' / TARGET
@@ -41,9 +42,8 @@ def main():
         'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
         'target': TARGET,
         'release_eligible': False,
-        'scope': 'P0/P1 fixture probe with independent screen/keyguard checks; NOT full acceptance.',
-        'unverified': ['real Feishu foreground', 'Doze', 'reboot',
-                       'multiple recurring schedules', 'realme UI 2.0'],
+        'scope': 'Extended API 30 acceptance matrix' if EXTENDED else 'Core API 30 probe',
+        'unverified': ['See individual checks for actual results', 'natural long-duration standby', 'realme UI 2.0'],
     }
     result_code = 1
     try:
@@ -65,8 +65,8 @@ def main():
             result_code = subprocess.run(
                 [sys.executable, str(ROOT / 'tools' / 'verify_android.py'),
                  '--adb', adb, '--port', '5037', '--serial', SERIAL,
-                 '--target', TARGET, '--report-dir', str(REPORT)],
-                cwd=ROOT, stdout=output, stderr=subprocess.STDOUT, timeout=420,
+                 '--target', TARGET, '--report-dir', str(REPORT)] + (['--extended'] if EXTENDED else []),
+                cwd=ROOT, stdout=output, stderr=subprocess.STDOUT, timeout=1500 if EXTENDED else 420,
             ).returncode
         print((REPORT / 'probe-output.log').read_text(encoding='utf-8', errors='replace'))
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
