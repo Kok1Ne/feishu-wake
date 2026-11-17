@@ -286,7 +286,7 @@ class MainActivity: Activity() {
         space(compatibility,8)
         compatibility.addView(Switch(this).apply {
             id=R.id.compatibility_toggle; text="启用兼容唤醒"; textSize=15f; setTextColor(ink); minHeight=dp(48)
-            isChecked=WakeReadiness.compatibilityEnabled(this)
+            isChecked=WakeReadiness.compatibilityEnabled(this@MainActivity)
             isEnabled=Build.VERSION.SDK_INT==30
             setOnCheckedChangeListener { _,on -> changeCompatibility(on) }
         },LinearLayout.LayoutParams(-1,-2))
