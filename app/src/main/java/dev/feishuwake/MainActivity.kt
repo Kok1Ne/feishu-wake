@@ -105,7 +105,7 @@ class MainActivity: Activity() {
                 else update(config.copy(minutes=(config.minutes+value).sorted()))
             },now.hour,now.minute,true).show()
         }
-        label("修改会取消旧任务并重新计算下次时间；使用手机当前时区。",13f)
+        label("修改会取消旧任务并重新计算下次时间；使用手机当前时区。固定定时使用系统可见闹钟，状态栏可能显示下次时间。",13f)
         button("立即测试（15 秒后执行，请息屏）") {
             if(AlarmScheduler.testLater(this)) toast("已安排 15 秒后测试，请按电源键息屏")
             else toast("未成功安排，请查看权限和日志")

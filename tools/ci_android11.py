@@ -11,6 +11,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = os.environ.get('FEISHU_PROBE_TARGET', 'mock')
@@ -61,14 +62,25 @@ def main():
         capture(adb_base + ['shell', 'getprop'], REPORT / 'device-properties.txt')
         capture(adb_base + ['shell', 'dumpsys', 'window', 'policy'], REPORT / 'keyguard-before.txt')
         capture(adb_base + ['logcat', '-c'], REPORT / 'logcat-clear.txt')
-        with (REPORT / 'probe-output.log').open('wb') as output:
-            result_code = subprocess.run(
-                [sys.executable, str(ROOT / 'tools' / 'verify_android.py'),
-                 '--adb', adb, '--port', '5037', '--serial', SERIAL,
-                 '--target', TARGET, '--report-dir', str(REPORT)] + (['--extended'] if EXTENDED else []),
-                cwd=ROOT, stdout=output, stderr=subprocess.STDOUT, timeout=1500 if EXTENDED else 420,
-            ).returncode
-        print((REPORT / 'probe-output.log').read_text(encoding='utf-8', errors='replace'))
+        command=[sys.executable, str(ROOT/'tools/verify_android.py'),
+                 '--adb',adb,'--port','5037','--serial',SERIAL,
+                 '--target',TARGET,'--report-dir',str(REPORT)] + (['--extended'] if EXTENDED else [])
+        with (REPORT/'probe-output.log').open('w',encoding='utf-8') as output:
+            proc=subprocess.Popen(command,cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                                  text=True,encoding='utf-8',errors='replace',bufsize=1)
+            def stream():
+                for line in proc.stdout:
+                    output.write(line);output.flush()
+                    print(line,end='',flush=True)
+            reader=threading.Thread(target=stream,daemon=True)
+            reader.start()
+            try:
+                result_code=proc.wait(timeout=1500 if EXTENDED else 420)
+            except subprocess.TimeoutExpired:
+                proc.kill();proc.wait()
+                raise
+            finally:
+                reader.join(timeout=10)
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
         status['blocked'] = str(error)
         print(str(error), file=sys.stderr)

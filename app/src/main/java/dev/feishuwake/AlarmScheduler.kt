@@ -59,7 +59,15 @@ object AlarmScheduler {
         store.put(if(manual) "testToken" else "alarmToken",token)
         store.put(if(manual) "testDue" else "nextDue",due)
         return try {
-            alarm(context).setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,due,pending(context,manual,token,due))
+            if(manual) {
+                alarm(context).setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,due,pending(context,true,token,due))
+            } else {
+                // Fixed user-selected wake times are visible alarm-clock events.
+                // Unlike ordinary allow-while-idle alarms, these are not postponed by standby quotas.
+                val show=PendingIntent.getActivity(context,400,Intent(context,MainActivity::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                alarm(context).setAlarmClock(AlarmManager.AlarmClockInfo(due,show),pending(context,false,token,due))
+            }
             store.log("system","schedule","OK","${if(manual) "息屏测试" else "下次定时"}：${Instant.ofEpochMilli(due).atZone(ZoneId.systemDefault())}")
             true
         } catch(e: RuntimeException) {

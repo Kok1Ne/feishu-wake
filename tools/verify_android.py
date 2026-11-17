@@ -98,6 +98,44 @@ def events(name):
             pass
     return rows
 
+def wait_locked_asleep(timeout=7):
+    deadline=time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        policy=adb('shell','dumpsys','window','policy')
+        power=adb('shell','dumpsys','power')
+        if keyguard(policy) is True and screen(power)=='Asleep':
+            return
+        time.sleep(0.25)
+
+def notification_switch(enabled):
+    """Use Android Settings to change the real package notification switch."""
+    import xml.etree.ElementTree as ET
+    adb('shell','input','keyevent','224')
+    adb('shell','wm','dismiss-keyguard')
+    adb('shell','am','start','-W','-a','android.settings.APP_NOTIFICATION_SETTINGS',
+        '--es','android.provider.extra.APP_PACKAGE',PACKAGE)
+    def read_switch():
+        adb('shell','uiautomator','dump','/sdcard/feishu-notification-ui.xml')
+        raw=adb('shell','cat','/sdcard/feishu-notification-ui.xml')
+        (REPORT/('notification-settings-'+str(enabled)+'.xml')).write_text(raw,encoding='utf-8')
+        root=ET.fromstring(raw[raw.index('<?xml'):])
+        candidates=[n for n in root.iter('node') if n.get('class')=='android.widget.Switch'
+                    and n.get('package')=='com.android.settings' and n.get('enabled')=='true']
+        if not candidates: raise RuntimeError('Package notification switch was not visible in Settings')
+        # The master switch is the topmost enabled Switch on the package notification page.
+        def bounds(n): return list(map(int,re.findall(r'\d+',n.get('bounds',''))))
+        candidates.sort(key=lambda n:bounds(n)[1])
+        return candidates[0],bounds(candidates[0])
+    switch,bounds=read_switch()
+    if (switch.get('checked')=='true')!=enabled:
+        x1,y1,x2,y2=bounds
+        adb('shell','input','tap',str((x1+x2)//2),str((y1+y2)//2))
+        time.sleep(0.4)
+    switch,_=read_switch()
+    record('notification_switch.'+('enabled' if enabled else 'disabled'),
+           (switch.get('checked')=='true')==enabled)
+    adb('shell','input','keyevent','3')
+
 def setup_case(name, route):
     global CASE_START
     control('stop')
@@ -108,7 +146,7 @@ def setup_case(name, route):
     CASE_START = datetime.datetime.fromtimestamp(float(adb('shell','date','+%s').strip()), datetime.timezone.utc)
     control('test_' + route)
     adb('shell', 'input', 'keyevent', '223')
-    time.sleep(1)
+    wait_locked_asleep()
     before = snapshot(name + '-before')
     record(name + '.initial_asleep', screen(before['power']) == 'Asleep', screen(before['power']))
     record(name + '.initial_keyguard', keyguard(before['window policy']) is True)
@@ -160,12 +198,12 @@ def extended_negatives():
             raise RuntimeError('Could not clear the temporary emulator PIN: '+cleared)
         adb('shell','locksettings','set-disabled','false')
 
-    adb('shell','cmd','appops','set',PACKAGE,'POST_NOTIFICATION','ignore')
+    notification_switch(False)
     try:
         setup_case('notification_denied','b')
         expect_failure('notification_denied','screen')
     finally:
-        adb('shell','cmd','appops','set',PACKAGE,'POST_NOTIFICATION','allow')
+        notification_switch(True)
         control('stop')
 
     setup_case('disabled_cancel','b')
@@ -188,7 +226,7 @@ def extended_negatives():
 def prefs():
     import xml.etree.ElementTree as ET
     root=ET.fromstring(adb('shell','run-as',PACKAGE,'cat','shared_prefs/wake.xml'))
-    return {node.attrib['name']: (node.text if node.tag=='string' else node.attrib.get('value'))
+    return {node.attrib['name']: ((node.text or '') if node.tag=='string' else node.attrib.get('value'))
             for node in root}
 
 def configure(minutes, days=(1,2,3,4,5,6,7)):
@@ -221,7 +259,7 @@ def before_schedule():
 
 def sleep_assert(name):
     adb('shell','input','keyevent','223')
-    time.sleep(1)
+    wait_locked_asleep()
     state=snapshot(name+'-before')
     record(name+'.initial_asleep',screen(state['power'])=='Asleep')
     record(name+'.initial_keyguard',keyguard(state['window policy']) is True)
@@ -232,6 +270,28 @@ def wait_wall(timestamp):
         remaining=timestamp-float(adb('shell','date','+%s').strip())
         if remaining<=0: return
         time.sleep(min(5,remaining))
+
+def unlocked_observation():
+    """Classify the platform's unlocked behavior without claiming automatic success."""
+    global CASE_START
+    before_schedule()
+    adb('shell','settings','put','system','screen_off_timeout','120000')
+    control('test_b')
+    time.sleep(40)
+    after=snapshot('unlocked-after')
+    rows=events('unlocked')
+    triggered={r['run'] for r in rows if r.get('stage')=='trigger' and r.get('status')=='OK'}
+    current=[r for r in rows if r.get('run') in triggered]
+    launched=any(r.get('stage')=='launch' and r.get('status')=='REQUESTED' for r in current)
+    failed=any(r.get('stage')=='screen' and r.get('status')=='FAIL' for r in current)
+    auto=launched and foreground(after['activity activities'])
+    deferred=not launched and failed and not foreground(after['activity activities'])
+    record('unlocked.alarm_delivered',len(triggered)==1)
+    record('unlocked.behavior_classified',auto or deferred,
+           'AUTO_FOREGROUND' if auto else 'HEADS_UP_ONLY_REQUIRES_USER_TAP' if deferred else 'UNEXPECTED_STATE')
+    record('unlocked.keyguard_remains_dismissed',keyguard(after['window policy']) is False)
+    control('stop')
+    adb('shell','settings','put','system','screen_off_timeout','30000')
 
 def recurrence_matrix():
     global CASE_START
@@ -300,13 +360,17 @@ def recurrence_matrix():
     record('reboot_restore.booted',booted)
     if not booted: raise RuntimeError('Emulator did not reboot in time')
     # No app launch after reboot: recovery must come from BOOT_COMPLETED.
-    time.sleep(5)
+    until=time.monotonic()+45
     state=prefs()
+    while state['alarmToken']==old_token and time.monotonic()<until:
+        time.sleep(1)
+        state=prefs()
+    adb('shell','am','get-standby-bucket',PACKAGE,check=False)
     record('reboot_restore.token_renewed',bool(state['alarmToken']) and state['alarmToken']!=old_token)
     record('reboot_restore.schedule_present',abs(int(state['nextDue'])/1000-due[0])<1)
     rows=events('reboot_restore')
     record('reboot_restore.broadcast_logged',any(r.get('stage')=='restore' and 'BOOT_COMPLETED' in r.get('detail','') for r in rows))
-    adb('shell','input','keyevent','223')
+    sleep_assert('reboot_restore')
     assert_success('reboot_restore',timeout=max(30,int(due[0]-time.time()+45)))
 
     before_schedule()
@@ -393,6 +457,7 @@ try:
         control('stop')
 
     if args.extended:
+        unlocked_observation()
         extended_negatives()
         recurrence_matrix()
 
@@ -403,6 +468,8 @@ try:
                  ('dev.feishuwake.CoreInstrumentedTest#configRoundTripAndCancellation,'
                   'dev.feishuwake.CoreInstrumentedTest#automationSwitchSchedulesAndCancels'),
                  PACKAGE + '.test/androidx.test.runner.AndroidJUnitRunner', timeout=120)
+    (REPORT/'instrumentation.txt').write_text(result,encoding='utf-8')
+    print(result,flush=True)
     record('instrumentation_config_cancel', 'OK (2 tests)' in result and 'FAILURES' not in result)
 except Exception as error:
     checks['blocked'] = {'status': 'FAIL', 'detail': type(error).__name__ + ': ' + str(error)}

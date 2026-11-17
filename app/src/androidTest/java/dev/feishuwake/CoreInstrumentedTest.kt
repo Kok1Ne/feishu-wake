@@ -49,12 +49,12 @@ class CoreInstrumentedTest {
         val toggle=requireNotNull(device.wait(Until.findObject(By.text("自动化总开关")),5000)) { "Automation control must be visible" }
         toggle.click()
         val deadline=android.os.SystemClock.elapsedRealtime()+5000
-        while(!store.config().enabled && android.os.SystemClock.elapsedRealtime()<deadline) android.os.SystemClock.sleep(100)
+        while((!store.config().enabled || store.long("nextDue")<=System.currentTimeMillis()) && android.os.SystemClock.elapsedRealtime()<deadline) android.os.SystemClock.sleep(100)
         assertTrue("Enabling via UI must persist configuration",store.config().enabled)
         assertTrue("Enabling via UI must register the next alarm",store.long("nextDue")>System.currentTimeMillis())
         requireNotNull(device.findObject(By.text("自动化总开关"))).click()
         val until=android.os.SystemClock.elapsedRealtime()+5000
-        while(store.config().enabled && android.os.SystemClock.elapsedRealtime()<until) android.os.SystemClock.sleep(100)
+        while((store.config().enabled || store.long("nextDue")!=0L || store.string("alarmToken").isNotEmpty()) && android.os.SystemClock.elapsedRealtime()<until) android.os.SystemClock.sleep(100)
         assertFalse(store.config().enabled)
         assertEquals(0L,store.long("nextDue"))
         assertEquals("",store.string("alarmToken"))
