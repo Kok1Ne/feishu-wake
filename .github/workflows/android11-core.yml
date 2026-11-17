@@ -13,6 +13,7 @@ on:
       - '*.gradle.kts'
       - 'gradle.properties'
       - '.github/workflows/android11-core.yml'
+      - 'research/feishu_download_probe.py'
 
 permissions:
   contents: read
@@ -76,11 +77,15 @@ jobs:
       - name: Compile internal test packages and run JVM tests and lint
         run: |
           bash ./gradlew --no-daemon --console=plain :app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:assembleDebugAndroidTest :testtarget:assembleDebug 2>&1 | tee reports/ci/gradle.log
-      - name: Boot API 30 and run the partial core probe
+      - name: Fetch and verify the official Feishu APK on this runner
+        env:
+          FEISHU_KEEP_PACKAGE: '1'
+        run: python3 research/feishu_download_probe.py 2>&1 | tee reports/ci/feishu-package.log
+      - name: Boot API 30 and test fixture then real Feishu
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
           api-level: 30
-          target: default
+          target: google_apis
           arch: x86_64
           profile: pixel_2
           ram-size: 2048M
@@ -90,7 +95,9 @@ jobs:
           disable-linux-hw-accel: 'false'
           disable-animations: 'false'
           emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim -accel on
-          script: python3 tools/ci_android11.py
+          script: |
+            python3 tools/ci_android11.py
+            FEISHU_PROBE_TARGET=feishu python3 tools/ci_android11.py
       - name: Save logs and test reports only
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

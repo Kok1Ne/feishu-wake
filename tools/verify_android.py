@@ -4,6 +4,7 @@ No instrumentation is active during alarm delivery. The fixture is not Feishu.
 import argparse
 import datetime
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -16,6 +17,7 @@ parser.add_argument('--port', default='5037')
 parser.add_argument('--serial', required=True)
 parser.add_argument('--target', choices=['mock', 'feishu'], default='mock')
 parser.add_argument('--report-dir', type=Path)
+parser.add_argument('--routes', default='b', choices=['b','a','ba'])
 args = parser.parse_args()
 if not re.fullmatch(r'emulator-\d+', args.serial):
     raise SystemExit('An emulator serial is required; never run this probe on a phone.')
@@ -25,6 +27,7 @@ REPORT.mkdir(parents=True, exist_ok=True)
 log = (REPORT / 'android-host.log').open('w', encoding='utf-8')
 checks = {}
 PACKAGE = 'dev.feishuwake.debug'
+CASE_START = None
 TARGET = 'dev.feishuwake.testtarget' if args.target == 'mock' else 'com.ss.android.lark'
 
 def adb(*command, timeout=40, check=True):
@@ -86,6 +89,8 @@ def events(name):
             continue
         try:
             row = json.loads(line[line.index('{'):])
+            if CASE_START is not None and datetime.datetime.fromisoformat(row['at'].replace('Z','+00:00')) < CASE_START:
+                continue
             rows.append(row)
             print(json.dumps(row, ensure_ascii=False), flush=True)
         except ValueError:
@@ -93,11 +98,13 @@ def events(name):
     return rows
 
 def setup_case(name, route):
+    global CASE_START
     control('stop')
     adb('shell', 'input', 'keyevent', '224')
     adb('shell', 'wm', 'dismiss-keyguard', check=False)  # Preparation only; before alarm registration.
     adb('shell', 'input', 'keyevent', '3')
-    adb('logcat', '-c')
+    adb('logcat', '-b', 'all', '-c')
+    CASE_START = datetime.datetime.fromtimestamp(float(adb('shell','date','+%s').strip()), datetime.timezone.utc)
     control('test_' + route)
     adb('shell', 'input', 'keyevent', '223')
     time.sleep(1)
@@ -117,6 +124,11 @@ try:
         adb('install', '-r', str(path), timeout=120)
     if args.target == 'mock':
         adb('install', '-r', str(ROOT/'testtarget/build/outputs/apk/debug/testtarget-debug.apk'), timeout=120)
+    if args.target == 'feishu':
+        official = Path(os.environ['RUNNER_TEMP']) / 'official-feishu.apk'
+        if not official.is_file():
+            raise RuntimeError('Verified official Feishu APK is missing on the cloud runner')
+        adb('install', '-r', str(official), timeout=240)
     started = adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/dev.feishuwake.MainActivity')
     record('install_launch', 'Status: ok' in started)
     control(args.target)
@@ -127,7 +139,7 @@ try:
     adb('shell', 'settings', 'put', 'global', 'stay_on_while_plugged_in', '0')
     adb('shell', 'settings', 'put', 'system', 'screen_off_timeout', '30000')
 
-    for route in ('b', 'a'):
+    for route in args.routes:
         name = 'screen_off_route_' + route
         setup_case(name, route)
         reached = wait_foreground()
@@ -136,7 +148,8 @@ try:
         record(name + '.foreground', reached and foreground(after['activity activities']))
         record(name + '.awake', screen(after['power']) == 'Awake', screen(after['power']))
         record(name + '.keyguard_dismissed', keyguard(after['window policy']) is False)
-        stages = [(r.get('stage'), r.get('status')) for r in rows]
+        triggered = [r['run'] for r in rows if r.get('stage') == 'trigger' and r.get('status') == 'OK']
+        stages = [(r.get('stage'), r.get('status')) for r in rows if triggered and r.get('run') == triggered[0]]
         record(name + '.alarm_delivered', ('trigger', 'OK') in stages)
         record(name + '.unlock_before_launch',
                ('keyguard', 'OK') in stages and ('launch', 'REQUESTED') in stages and

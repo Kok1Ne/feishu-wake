@@ -9,6 +9,7 @@ import re
 import html
 from pathlib import Path
 import subprocess
+import sys
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 import zipfile
@@ -73,4 +74,12 @@ for tool, arguments in (('aapt',['dump','badging']),('apksigner',['verify','--ve
     else:
         print(result.stdout, result.stderr, flush=True)
     print('METADATA_EXIT', tool, result.returncode, flush=True)
-destination.unlink()
+    if result.returncode != 0:
+        raise SystemExit('Official package metadata/signature check failed')
+    if tool == 'aapt' and \
+            "package: name='com.ss.android.lark'" not in result.stdout:
+        raise SystemExit('Unexpected Android package name')
+    if tool == 'apksigner' and 'd3f0e06b185518663e2afea2fcd528f5b0b8ca6c3b47e57b22893715043572ec' not in result.stdout:
+        raise SystemExit('Official package signer changed; requires review')
+if os.environ.get('FEISHU_KEEP_PACKAGE') != '1':
+    destination.unlink()

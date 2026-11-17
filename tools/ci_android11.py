@@ -13,7 +13,10 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-REPORT = ROOT / 'reports' / 'ci'
+TARGET = os.environ.get('FEISHU_PROBE_TARGET', 'mock')
+if TARGET not in ('mock', 'feishu'):
+    raise SystemExit('Unknown probe target')
+REPORT = ROOT / 'reports' / 'ci' / TARGET
 SERIAL = 'emulator-5554'
 
 
@@ -36,7 +39,7 @@ def main():
         'source_commit': os.environ.get('GITHUB_SHA'),
         'run_id': os.environ.get('GITHUB_RUN_ID'),
         'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
-        'target': 'mock',
+        'target': TARGET,
         'release_eligible': False,
         'scope': 'P0/P1 fixture probe with independent screen/keyguard checks; NOT full acceptance.',
         'unverified': ['real Feishu foreground', 'Doze', 'reboot',
@@ -62,7 +65,7 @@ def main():
             result_code = subprocess.run(
                 [sys.executable, str(ROOT / 'tools' / 'verify_android.py'),
                  '--adb', adb, '--port', '5037', '--serial', SERIAL,
-                 '--target', 'mock', '--report-dir', str(REPORT)],
+                 '--target', TARGET, '--report-dir', str(REPORT)],
                 cwd=ROOT, stdout=output, stderr=subprocess.STDOUT, timeout=420,
             ).returncode
         print((REPORT / 'probe-output.log').read_text(encoding='utf-8', errors='replace'))

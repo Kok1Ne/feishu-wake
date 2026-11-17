@@ -1,12 +1,6 @@
 name: Inspect official Feishu download source
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/feishu-source.yml'
-      - 'research/feishu_download_probe.py'
-      - 'research/evidence_audit.py'
 permissions:
   contents: read
   actions: read
