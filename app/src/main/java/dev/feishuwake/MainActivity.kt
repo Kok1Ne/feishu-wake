@@ -207,7 +207,7 @@ class MainActivity: Activity() {
             val item=row().apply { setPadding(0,dp(12),0,dp(6)) }
             val value=minuteText(minute)
             item.addView(TextView(this).apply {
-                text=value; textSize=28f; setTextColor(ink); typeface=Typeface.create("sans-serif-medium",0)
+                text=value; textSize=28f; setTextColor(ink); typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
                 contentDescription="修改 "+value; minHeight=dp(48); gravity=Gravity.CENTER_VERTICAL
                 setOnClickListener { editTime(minute) }
             },LinearLayout.LayoutParams(0,-2,1f))
