@@ -1,5 +1,9 @@
 name: Android 11 verified Release
 on:
+  workflow_run:
+    workflows: ['Android 11 acceptance (not release)']
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       verification_run_id:
@@ -10,12 +14,21 @@ permissions:
   contents: write
   actions: read
 env:
-  FEISHU_EVIDENCE_RUN_ID: ${{ inputs.verification_run_id }}
+  FEISHU_EVIDENCE_RUN_ID: ${{ inputs.verification_run_id || github.event.workflow_run.id }}
 concurrency:
   group: verified-release
   cancel-in-progress: false
 jobs:
   verified-release:
+    # Auto-release only a successful trusted main push at this exact source revision.
+    # Source, raw evidence, signing and fresh signed-APK tests remain mandatory.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_sha == github.sha)
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     defaults:
