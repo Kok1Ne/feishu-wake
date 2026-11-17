@@ -79,6 +79,11 @@ def main():
             for service in ('power', 'window', 'activity', 'alarm', 'deviceidle', 'notification'):
                 capture(adb_base + ['shell', 'dumpsys', service], REPORT / (service + '.txt'))
             capture(adb_base + ['logcat', '-d', '-v', 'threadtime'], REPORT / 'logcat.txt')
+        if result_code != 0 and (REPORT / 'logcat.txt').is_file():
+            lines = (REPORT / 'logcat.txt').read_text(encoding='utf-8', errors='replace').splitlines()
+            diagnostic = [line for line in lines if any(word in line for word in
+                          ('FeishuWake', 'ActivityTaskManager', 'FATAL EXCEPTION', 'ANR in', 'lowmemorykiller'))]
+            print('FAILURE_DEVICE_LOGS\\n' + '\\n'.join(diagnostic[-100:]), flush=True)
         status['probe_exit_code'] = result_code
         status['finished_utc'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         (REPORT / 'ci-status.json').write_text(json.dumps(status, indent=2), encoding='utf-8')

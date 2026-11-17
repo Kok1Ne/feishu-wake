@@ -129,6 +129,10 @@ try:
         if not official.is_file():
             raise RuntimeError('Verified official Feishu APK is missing on the cloud runner')
         adb('install', '-r', str(official), timeout=240)
+    # Setup only: a preceding test/install may have allowed the normal screen timeout.
+    # The actual background alarm trial still establishes and asserts a fresh locked/asleep state.
+    adb('shell', 'input', 'keyevent', '224')
+    adb('shell', 'wm', 'dismiss-keyguard')
     started = adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/dev.feishuwake.MainActivity')
     record('install_launch', 'Status: ok' in started)
     control(args.target)
@@ -143,6 +147,8 @@ try:
         name = 'screen_off_route_' + route
         setup_case(name, route)
         reached = wait_foreground()
+        if reached:
+            time.sleep(5)  # Detect an immediate target crash or task returning to another app.
         after = snapshot(name + '-after')
         rows = events(name)
         record(name + '.foreground', reached and foreground(after['activity activities']))
