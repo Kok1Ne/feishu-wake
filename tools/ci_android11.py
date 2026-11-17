@@ -38,9 +38,8 @@ def main():
         'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
         'target': 'mock',
         'release_eligible': False,
-        'scope': 'Partial P0/P1 fixture probe; NOT full acceptance or real Feishu verification.',
-        'unverified': ['independent screen and swipe-keyguard assertions',
-                       'real Feishu foreground', 'Doze', 'reboot',
+        'scope': 'P0/P1 fixture probe with independent screen/keyguard checks; NOT full acceptance.',
+        'unverified': ['real Feishu foreground', 'Doze', 'reboot',
                        'multiple recurring schedules', 'realme UI 2.0'],
     }
     result_code = 1

@@ -1,8 +1,18 @@
 name: Android 11 core probe (not release)
 
-# Manual dispatch only: connecting or pushing the repository does not run a job.
+# Standard public-repository runner only. No release/signing in this workflow.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'testtarget/**'
+      - 'tools/**'
+      - 'gradle/**'
+      - '*.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/android11-core.yml'
 
 permissions:
   contents: read
@@ -46,6 +56,20 @@ jobs:
         with:
           packages: platform-tools
           log-accepted-android-sdk-licenses: 'false'
+      - name: Free unused packages on the disposable cloud runner
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$ANDROID_HOME" = /usr/local/lib/android/sdk
+          df -h . | tee reports/ci/disk-before.txt
+          # Kotlin/Java build: preinstalled NDK/CMake are unused. These are cloud paths.
+          for unused in "$ANDROID_HOME/ndk" "$ANDROID_HOME/cmake"; do
+            if [ -d "$unused" ]; then
+              du -sh "$unused" | tee -a reports/ci/disk-before.txt
+              rm -rf -- "$unused"
+            fi
+          done
+          df -h . | tee reports/ci/disk-after.txt
       - name: Install compile SDKs
         run: |
           sdkmanager 'platforms;android-30' 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools' 2>&1 | tee reports/ci/sdk-install.log

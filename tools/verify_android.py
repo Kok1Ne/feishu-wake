@@ -1,59 +1,167 @@
-"""Host-side P0/P1 check. Requires a booted API 30 emulator; never runs on a USB phone.
-
-This script does not authorize Release: mock-target passes are not Feishu passes.
+"""Cloud-only API 30 probe with independent screen/keyguard/foreground evidence.
+No instrumentation is active during alarm delivery. The fixture is not Feishu.
 """
-import argparse, datetime, json, pathlib, re, subprocess, time, sys
-p=argparse.ArgumentParser()
-p.add_argument('--adb',required=True); p.add_argument('--port',default='5037'); p.add_argument('--serial',required=True)
-p.add_argument('--target',choices=['mock','feishu'],default='mock')
-p.add_argument('--report-dir',type=pathlib.Path)
-args=p.parse_args()
-if not re.fullmatch(r'emulator-\d+',args.serial): raise SystemExit('Use an emulator serial, not a real phone.')
-ROOT=pathlib.Path(__file__).resolve().parents[1]; REPORT=args.report_dir or ROOT/'reports'; REPORT.mkdir(parents=True,exist_ok=True)
-log=(REPORT/'android-host.log').open('w',encoding='utf-8')
-checks={}; package='dev.feishuwake.debug'
-def adb(*cmd,timeout=30,check=True):
-    proc=subprocess.run([args.adb,'-P',args.port,'-s',args.serial,*cmd],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=timeout)
-    log.write(datetime.datetime.now(datetime.timezone.utc).isoformat()+' '+' '.join(cmd)+'\n'+proc.stdout+proc.stderr+'\n'); log.flush()
-    if check and proc.returncode: raise RuntimeError('ADB command failed: '+str(cmd))
-    return proc.stdout
-def control(op): adb('shell','am','broadcast','-n',package+'/dev.feishuwake.DebugControlReceiver','--es','op',op)
-def wait_target(target,timeout=40):
-    until=time.monotonic()+timeout
-    while time.monotonic()<until:
-        activities=adb('shell','dumpsys','activity','activities')
-        if any(target in line for line in activities.splitlines() if 'mResumedActivity' in line or 'topResumedActivity' in line): return True
+import argparse
+import datetime
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--adb', required=True)
+parser.add_argument('--port', default='5037')
+parser.add_argument('--serial', required=True)
+parser.add_argument('--target', choices=['mock', 'feishu'], default='mock')
+parser.add_argument('--report-dir', type=Path)
+args = parser.parse_args()
+if not re.fullmatch(r'emulator-\d+', args.serial):
+    raise SystemExit('An emulator serial is required; never run this probe on a phone.')
+ROOT = Path(__file__).resolve().parents[1]
+REPORT = args.report_dir or ROOT / 'reports'
+REPORT.mkdir(parents=True, exist_ok=True)
+log = (REPORT / 'android-host.log').open('w', encoding='utf-8')
+checks = {}
+PACKAGE = 'dev.feishuwake.debug'
+TARGET = 'dev.feishuwake.testtarget' if args.target == 'mock' else 'com.ss.android.lark'
+
+def adb(*command, timeout=40, check=True):
+    result = subprocess.run([args.adb, '-P', args.port, '-s', args.serial, *command],
+                            capture_output=True, text=True, encoding='utf-8',
+                            errors='replace', timeout=timeout)
+    log.write(datetime.datetime.now(datetime.timezone.utc).isoformat() + ' ' +
+              ' '.join(command) + '\n' + result.stdout + result.stderr + '\n')
+    log.flush()
+    if check and result.returncode:
+        raise RuntimeError('ADB failed: ' + repr(command) + ': ' + result.stderr[-1000:])
+    return result.stdout
+
+def control(op):
+    return adb('shell', 'am', 'broadcast', '-n', PACKAGE + '/dev.feishuwake.DebugControlReceiver',
+               '--es', 'op', op)
+
+def record(name, condition, detail=''):
+    checks[name] = {'status': 'PASS' if condition else 'FAIL', 'detail': detail}
+    print(name + ': ' + checks[name]['status'] + (' ' + detail if detail else ''), flush=True)
+    return condition
+
+def snapshot(name):
+    values = {}
+    for service in ('power', 'window policy', 'activity activities', 'alarm'):
+        text = adb('shell', 'dumpsys', *service.split())
+        (REPORT / (name + '-' + service.replace(' ', '-') + '.txt')).write_text(text, encoding='utf-8')
+        values[service] = text
+    return values
+
+def screen(power):
+    match = re.search(r'mWakefulness=(\w+)', power)
+    return match.group(1) if match else 'UNKNOWN'
+
+def keyguard(policy):
+    # Restrict "showing" to KeyguardServiceDelegate: unrelated window fields are not evidence.
+    section = policy.split('KeyguardServiceDelegate', 1)[-1] if 'KeyguardServiceDelegate' in policy else ''
+    match = re.search(r'(?m)^\s*showing=(true|false)\s*$', section)
+    return match.group(1) == 'true' if match else None
+
+def foreground(text):
+    return any(TARGET + '/' in line for line in text.splitlines()
+               if 'mResumedActivity' in line or 'topResumedActivity' in line)
+
+def wait_foreground(timeout=40):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if foreground(adb('shell', 'dumpsys', 'activity', 'activities')):
+            return True
         time.sleep(1)
     return False
-try:
-    if adb('shell','getprop','sys.boot_completed').strip()!='1': raise RuntimeError('Android has not completed boot')
-    if adb('shell','getprop','ro.build.version.sdk').strip()!='30': raise RuntimeError('Expected Android API 30')
-    checks['api30_boot']='PASS'
-    for path in [ROOT/'app/build/outputs/apk/debug/app-debug.apk',ROOT/'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk']:
-        adb('install','-r',str(path),timeout=120)
-    if args.target=='mock': adb('install','-r',str(ROOT/'testtarget/build/outputs/apk/debug/testtarget-debug.apk'),timeout=120)
-    adb('shell','am','start','-W','-n',package+'/dev.feishuwake.MainActivity')
-    checks['install_launch']='PASS'
-    control(args.target)
-    target='dev.feishuwake.testtarget' if args.target=='mock' else 'com.ss.android.lark'
-    if not adb('shell','pm','path',target,check=False).strip(): raise RuntimeError('Requested target app is not installed')
-    for route in ('b','a'):
-        control('stop'); control('test_'+route)
-        adb('shell','input','keyevent','3')
-        adb('shell','input','keyevent','223')
-        adb('shell','dumpsys','power')
-        # No instrumentation is active: preserve true background Activity launch restrictions.
-        checks['screen_off_route_'+route]='PASS' if wait_target(target) else 'FAIL'
-        adb('shell','dumpsys','window','policy')
-        adb('shell','dumpsys','power')
-        adb('logcat','-d','-s','FeishuWake:I','ActivityTaskManager:I','AndroidRuntime:E')
+
+def events(name):
+    raw = adb('logcat', '-d', '-v', 'brief', '-s', 'FeishuWake:I', 'ActivityTaskManager:I', 'AndroidRuntime:E')
+    (REPORT / (name + '-logcat.txt')).write_text(raw, encoding='utf-8')
+    rows = []
+    for line in raw.splitlines():
+        if 'FeishuWake' not in line or '{' not in line:
+            continue
+        try:
+            row = json.loads(line[line.index('{'):])
+            rows.append(row)
+            print(json.dumps(row, ensure_ascii=False), flush=True)
+        except ValueError:
+            pass
+    return rows
+
+def setup_case(name, route):
     control('stop')
-    result=adb('shell','am','instrument','-w','-r','-e','class','dev.feishuwake.CoreInstrumentedTest#configRoundTripAndCancellation',package+'.test/androidx.test.runner.AndroidJUnitRunner',timeout=120)
-    checks['instrumentation_config_cancel']='PASS' if 'OK (1 test)' in result and 'FAILURES' not in result else 'FAIL'
-except Exception as e:
-    checks['blocked']=type(e).__name__+': '+str(e)
+    adb('shell', 'input', 'keyevent', '224')
+    adb('shell', 'wm', 'dismiss-keyguard', check=False)  # Preparation only; before alarm registration.
+    adb('shell', 'input', 'keyevent', '3')
+    adb('logcat', '-c')
+    control('test_' + route)
+    adb('shell', 'input', 'keyevent', '223')
+    time.sleep(1)
+    before = snapshot(name + '-before')
+    record(name + '.initial_asleep', screen(before['power']) == 'Asleep', screen(before['power']))
+    record(name + '.initial_keyguard', keyguard(before['window policy']) is True)
+    record(name + '.initial_target_not_foreground', not foreground(before['activity activities']))
+
+try:
+    if adb('shell', 'getprop', 'ro.build.version.sdk').strip() != '30':
+        raise RuntimeError('Expected Android API 30')
+    if adb('shell', 'getprop', 'sys.boot_completed').strip() != '1':
+        raise RuntimeError('Android has not completed boot')
+    record('api30_boot', True)
+    for path in (ROOT/'app/build/outputs/apk/debug/app-debug.apk',
+                 ROOT/'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'):
+        adb('install', '-r', str(path), timeout=120)
+    if args.target == 'mock':
+        adb('install', '-r', str(ROOT/'testtarget/build/outputs/apk/debug/testtarget-debug.apk'), timeout=120)
+    started = adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/dev.feishuwake.MainActivity')
+    record('install_launch', 'Status: ok' in started)
+    control(args.target)
+    if not adb('shell', 'pm', 'path', TARGET, check=False).strip().startswith('package:'):
+        raise RuntimeError('Target application is not installed: ' + TARGET)
+    adb('shell', 'locksettings', 'set-disabled', 'false')
+    adb('shell', 'settings', 'put', 'secure', 'lock_screen_lock_after_timeout', '0')
+    adb('shell', 'settings', 'put', 'global', 'stay_on_while_plugged_in', '0')
+    adb('shell', 'settings', 'put', 'system', 'screen_off_timeout', '30000')
+
+    for route in ('b', 'a'):
+        name = 'screen_off_route_' + route
+        setup_case(name, route)
+        reached = wait_foreground()
+        after = snapshot(name + '-after')
+        rows = events(name)
+        record(name + '.foreground', reached and foreground(after['activity activities']))
+        record(name + '.awake', screen(after['power']) == 'Awake', screen(after['power']))
+        record(name + '.keyguard_dismissed', keyguard(after['window policy']) is False)
+        stages = [(r.get('stage'), r.get('status')) for r in rows]
+        record(name + '.alarm_delivered', ('trigger', 'OK') in stages)
+        record(name + '.unlock_before_launch',
+               ('keyguard', 'OK') in stages and ('launch', 'REQUESTED') in stages and
+               stages.index(('keyguard', 'OK')) < stages.index(('launch', 'REQUESTED')))
+        control('stop')
+
+    # Device-side assertions are separate from the background Activity launch trials.
+    adb('shell', 'input', 'keyevent', '224')
+    adb('shell', 'wm', 'dismiss-keyguard', check=False)
+    result = adb('shell', 'am', 'instrument', '-w', '-r', '-e', 'class',
+                 'dev.feishuwake.CoreInstrumentedTest#configRoundTripAndCancellation',
+                 PACKAGE + '.test/androidx.test.runner.AndroidJUnitRunner', timeout=120)
+    record('instrumentation_config_cancel', 'OK (1 test)' in result and 'FAILURES' not in result)
+except Exception as error:
+    checks['blocked'] = {'status': 'FAIL', 'detail': type(error).__name__ + ': ' + str(error)}
+    print(checks['blocked'], flush=True)
 finally:
+    try:
+        control('stop')
+    except Exception:
+        pass
     log.close()
-    (REPORT/'android-host-results.json').write_text(json.dumps({'target':args.target,'checks':checks,'release_eligible':False,'note':'P0/P1 partial tests only. A fixture is not Feishu; full matrix and independent lock-state assertions are still required.'},ensure_ascii=False,indent=2),encoding='utf-8')
-    print(json.dumps(checks,ensure_ascii=False))
-    if 'blocked' in checks or 'FAIL' in checks.values(): sys.exit(1)
+    result = {'target': args.target, 'checks': checks, 'release_eligible': False,
+              'note': 'Core probe only. Fixture evidence cannot establish real Feishu or realme compatibility.'}
+    (REPORT/'android-host-results.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+    print(json.dumps(result, ensure_ascii=False), flush=True)
+    if not checks or any(row['status'] != 'PASS' for row in checks.values()):
+        sys.exit(1)
