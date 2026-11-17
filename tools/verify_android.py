@@ -107,6 +107,76 @@ def wait_locked_asleep(timeout=7):
             return
         time.sleep(0.25)
 
+def prepare_unlocked():
+    """Settle the user's setup interaction before scheduling/sleeping; never run during a trial."""
+    adb('shell','input','keyevent','224')
+    adb('shell','wm','dismiss-keyguard',check=False)
+    adb('shell','input','keyevent','3')
+    deadline=time.monotonic()+12
+    stable=None
+    while time.monotonic()<deadline:
+        policy=adb('shell','dumpsys','window','policy')
+        power=adb('shell','dumpsys','power')
+        ready=(keyguard(policy) is False and screen(power)=='Awake' and
+               'screenState=SCREEN_STATE_ON' in policy and 'interactiveState=INTERACTIVE_STATE_AWAKE' in policy)
+        if ready:
+            stable=stable or time.monotonic()
+            if time.monotonic()-stable>=1.5:
+                return
+        else:
+            stable=None
+        time.sleep(.2)
+    raise RuntimeError('Unlocked setup did not settle before the alarm trial')
+
+def reboot_same_device():
+    """Observe an actual new kernel boot; restart only a stopped cloud AVD, preserving userdata."""
+    import socket
+    before=adb('shell','cat','/proc/sys/kernel/random/boot_id').strip()
+    if not re.fullmatch(r'[0-9a-f-]{36}',before): raise RuntimeError('Cannot establish pre-reboot boot ID')
+    (REPORT/'reboot-boot-id-before.txt').write_text(before+'\n',encoding='utf-8')
+    try:
+        adb('reboot',timeout=10,check=False)
+    except subprocess.TimeoutExpired:
+        print('ADB reboot transport timed out; observing kernel boot and cloud emulator state.',flush=True)
+    deadline=time.monotonic()+240
+    relaunched=False
+    after=''
+    while time.monotonic()<deadline:
+        port_open=False
+        try:
+            with socket.create_connection(('127.0.0.1',5554),timeout=1): port_open=True
+        except OSError:
+            pass
+        if not port_open and not relaunched:
+            # Some emulator builds terminate the host process on guest reboot.
+            # Do not wipe, recreate, reinstall or launch the app during restoration.
+            processes=subprocess.run(['pgrep','-f','(emulator|qemu-system).*-avd test'],capture_output=True,text=True)
+            if processes.returncode==1:
+                if os.environ.get('GITHUB_ACTIONS')!='true' or os.environ.get('RUNNER_ENVIRONMENT')!='github-hosted':
+                    raise RuntimeError('AVD restart is restricted to the disposable cloud runner')
+                binary=Path(os.environ['ANDROID_HOME'])/'emulator/emulator'
+                with (REPORT/'reboot-emulator.log').open('w',encoding='utf-8') as output:
+                    subprocess.Popen([str(binary),'-port','5554','-avd','test','-no-window','-no-audio',
+                        '-no-snapshot','-gpu','swiftshader_indirect','-no-boot-anim','-accel','on'],
+                        stdout=output,stderr=subprocess.STDOUT,start_new_session=True)
+                relaunched=True
+                print('Cloud emulator process exited; cold-starting the SAME AVD with its existing userdata.',flush=True)
+        try:
+            completed=adb('shell','getprop','sys.boot_completed',timeout=5,check=False).strip()=='1'
+            if completed:
+                after=adb('shell','cat','/proc/sys/kernel/random/boot_id',timeout=5,check=False).strip()
+                if re.fullmatch(r'[0-9a-f-]{36}',after) and after!=before:
+                    (REPORT/'reboot-host-observation.json').write_text(json.dumps({
+                        'before_boot_id':before,'after_boot_id':after,'host_avd_relaunched':relaunched,
+                        'userdata_preserved':True},indent=2),encoding='utf-8')
+                    record('reboot_restore.boot_id_changed',True)
+                    return True
+        except subprocess.TimeoutExpired:
+            pass
+        time.sleep(2)
+    record('reboot_restore.boot_id_changed',False,'No completed new kernel boot observed')
+    return False
+
 def notification_switch(enabled):
     """Use Android Settings to change the real package notification switch."""
     import xml.etree.ElementTree as ET
@@ -270,9 +340,7 @@ def clock_minutes(offsets):
 def before_schedule():
     global CASE_START
     control('stop')
-    adb('shell','input','keyevent','224')
-    adb('shell','wm','dismiss-keyguard')
-    adb('shell','input','keyevent','3')
+    prepare_unlocked()
     adb('logcat','-b','all','-c')
     CASE_START=datetime.datetime.fromtimestamp(float(adb('shell','date','+%s').strip()),datetime.timezone.utc)
 
@@ -344,8 +412,7 @@ def recurrence_matrix():
     record('disable_cancel.no_execution',not any(r.get('stage')=='trigger' for r in rows) and screen(state['power'])=='Asleep')
     record('disable_cancel.state_cleared',int(prefs()['nextDue'])==0 and prefs()['alarmToken']=='')
     # Enabling is a user action: prepare the UI state before enabling, then sleep again.
-    adb('shell','input','keyevent','224')
-    adb('shell','wm','dismiss-keyguard')
+    prepare_unlocked()
     control('enable')
     CASE_START=datetime.datetime.fromtimestamp(float(adb('shell','date','+%s').strip()),datetime.timezone.utc)
     record('reenable.next_due',abs(int(prefs()['nextDue'])/1000-due[1])<1)
@@ -363,19 +430,10 @@ def recurrence_matrix():
     assert_success('edit_new_time',timeout=100)
 
     before_schedule()
-    minutes,due=clock_minutes((3,4))
+    minutes,due=clock_minutes((5,6))
     configure(minutes)
     old_token=prefs()['alarmToken']
-    adb('reboot')
-    deadline=time.monotonic()+180
-    booted=False
-    while time.monotonic()<deadline:
-        try:
-            booted=adb('shell','getprop','sys.boot_completed',timeout=10,check=False).strip()=='1'
-        except subprocess.TimeoutExpired:
-            pass
-        if booted: break
-        time.sleep(2)
+    booted=reboot_same_device()
     record('reboot_restore.booted',booted)
     if not booted: raise RuntimeError('Emulator did not reboot in time')
     # No app launch after reboot: recovery must come from BOOT_COMPLETED.
@@ -400,8 +458,7 @@ def recurrence_matrix():
     wait_wall(due[0]+8)
     rows=events('force_stop')
     record('force_stop.no_execution',not any(r.get('stage')=='trigger' for r in rows))
-    adb('shell','input','keyevent','224')
-    adb('shell','wm','dismiss-keyguard')
+    prepare_unlocked()
     adb('shell','am','start','-W','-n',PACKAGE+'/dev.feishuwake.MainActivity')
     state=prefs()
     record('force_stop_recovery.next_registered',abs(int(state['nextDue'])/1000-due[1])<1)

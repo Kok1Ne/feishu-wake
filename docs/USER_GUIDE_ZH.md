@@ -53,3 +53,14 @@
 ## 后续更新
 
 包名固定为 dev.feishuwake，正式版本使用固定签名证书。以后应直接覆盖安装正式更新，避免卸载清空配置。签名恢复资料属于私密资料，请勿放入公开仓库或发给他人。
+
+## realme 官方设置参考
+
+realme 官方帮助列出 UI 2.0 的后台应用锁定方式：最近任务中打开应用右上角菜单，选择锁定；省电模式位于“设置 → 电池”。官方还列出“设置 → 电池 → 更多电池设置 → 优化电池使用”。这属于设置参考，不是本机验证结果；不同地区的中文菜单可能不同。
+
+长按 Feishu Wake 图标进入应用信息，在耗电管理中检查允许后台活动、允许自启动和允许启动其他应用。这些开关对唤醒及启动飞书有影响，仍需以目标手机实际菜单和日志确认。
+
+参考：
+- [保持应用后台运行](https://www.realme.com/in/support/kw/doc/2062314?articleIndex=8&queryId=5f45b86db54c43c38dbeb3e306db7e4b)
+- [优化电池使用](https://www.realme.com/in/support/kw/doc/2068398?articleIndex=7&queryId=be63975ff1ff411c975c3b3c0e204299)
+- [后台活动、自启动及启动其他应用的开关](https://www.realme.com/in/support/kw/doc/2083586?articleIndex=8&queryId=b9315d60d21a47459ea616c4eb81ba00)

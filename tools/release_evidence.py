@@ -27,7 +27,7 @@ mapping={
  'dismiss_swipe':['screen_off_route_b.initial_keyguard','screen_off_route_b.keyguard_dismissed','screen_off_route_b.unlock_before_launch'],
  'feishu_foreground':['screen_off_route_b.foreground'],
  'doze':['doze.initial_keyguard','doze.deep_idle_observed','doze.foreground_stable','doze.awake','doze.keyguard_dismissed','doze.single_trigger','doze.unlock_before_launch'],
- 'reboot_restore':['reboot_restore.booted','reboot_restore.token_renewed','reboot_restore.schedule_present','reboot_restore.broadcast_logged','reboot_restore.foreground_stable','reboot_restore.single_trigger'],
+ 'reboot_restore':['reboot_restore.boot_id_changed','reboot_restore.booted','reboot_restore.token_renewed','reboot_restore.schedule_present','reboot_restore.broadcast_logged','reboot_restore.foreground_stable','reboot_restore.single_trigger'],
  'multiple_alarms':['multiple_alarms.first_due','multiple_first.foreground_stable','multiple_alarms.second_registered','multiple_second.foreground_stable','multiple_alarms.next_day'],
  'disable_cancel':['disabled_cancel.no_trigger','disabled_cancel.asleep','disable_cancel.no_execution','disable_cancel.state_cleared'],
  'reenable':['reenable.next_due','reenable.foreground_stable','reenable.single_trigger'],

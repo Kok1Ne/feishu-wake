@@ -54,6 +54,16 @@ def tap(text,scroll=False):
 def open_main():
     adb('shell','input','keyevent','224')
     adb('shell','wm','dismiss-keyguard')
+    deadline=time.monotonic()+12
+    stable=None
+    while time.monotonic()<deadline:
+        policy=adb('shell','dumpsys','window','policy')
+        if locked(policy) is False and 'screenState=SCREEN_STATE_ON' in policy:
+            stable=stable or time.monotonic()
+            if time.monotonic()-stable>=1.5: break
+        else: stable=None
+        time.sleep(.2)
+    else: raise RuntimeError('Release UI setup did not reach a stable unlocked state')
     result=adb('shell','am','start','-W','-n',PACKAGE+'/dev.feishuwake.MainActivity')
     if 'Status: ok' not in result: raise RuntimeError('Release did not start')
 try:
